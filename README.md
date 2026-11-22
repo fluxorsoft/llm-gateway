@@ -31,8 +31,8 @@ It runs [LiteLLM](https://github.com/BerriAI/litellm) on Cloud Run. This project
 - **Each team in its own project.** Model calls run in, and are billed to, the team's own Google Cloud project, with its
   own quota.
 - **Rules as files.** A model catalogue, and one file per team. A plan that breaks a rule stops and lists every reason.
-- **[Model Armor](https://cloud.google.com/security/products/model-armor) on every prompt and every answer**, streamed or
-  not. When it cannot check, the call is refused.
+- **[Model Armor](https://cloud.google.com/security/products/model-armor) on every message and every answer**, streamed or
+  not. When it cannot check all of it, the call is refused.
 - **No way round it.** A request filter in front of LiteLLM, only the inference paths, default URLs off, no internet
   route, and apps with no model access of their own.
 - **Cost by team**, in LiteLLM and in BigQuery, without storing prompts or answers.
@@ -77,6 +77,23 @@ model. Two teams' networks are each peered to the gateway's, and not to each oth
 request. Without the filter, one team's key was served from another team's project, and from the `us` location. The
 filter ([gateway/guard.py](gateway/guard.py)) sees the raw request, allows only known paths, fields and headers, and
 passes on a rebuilt body. A LiteLLM hook cannot do this: LiteLLM has already changed the body when the hook sees it.
+
+**Why a guardrail of our own.** LiteLLM's Model Armor guardrail (1.108.15) shows Model Armor only the last block of user
+messages, and takes a check that was skipped for a pass. Ours ([gateway/armor.py](gateway/armor.py)) is a small class on
+top of it:
+
+| | Read by Model Armor |
+|---|---|
+| Sent | every message (system, developer, user, assistant, tool), tool calls, the app's tools, the response format, stop words, embeddings input |
+| Answered | the text, the model's reasoning, and tool calls, as one |
+
+The call is refused when Model Armor cannot be reached, when it did not run or skipped any filter, or when the request is
+longer than 120,000 characters (`ARMOR_MAX_CHARACTERS`): Model Armor skips its injection check above 65,536 tokens. If a
+LiteLLM upgrade changes the class ours stands on, the gateway does not start until someone has looked.
+
+**What a request may hold.** Text, and the app's own functions as tools. Pictures, sound and files are refused, as Model
+Armor is shown text here; so are the provider's tools (web search, opening an address, running code), which act from the
+provider's side, where this network's walls do not reach.
 
 **Streaming.** Because the whole answer is checked, a streamed answer arrives at once, after the check. That is the
 price of checking answers: text already sent cannot be taken back.
@@ -178,12 +195,12 @@ client = OpenAI(base_url="https://llm.internal.example.com/v1", api_key=key)
 answer = client.chat.completions.create(model="support-chat", messages=[{"role": "user", "content": "Hello"}])
 ```
 
-Send only standard chat fields: others are refused with a 400 that names them. SDKs that add their own fields
+Send only standard chat fields, with text messages: others are refused with a 400 that names them. SDKs that add their own fields
 (`metadata`, `store`, `extra_body`) must leave them out.
 
 | The app gets | It should |
 |---|---|
-| 400 `fields not allowed` | fix the request |
+| 400 `fields not allowed`, `not allowed`, `can be checked` | fix the request |
 | 400 `blocked by Model Armor` | show the reason; not retry |
 | 401, 403 | check its key and model name; not retry |
 | 422 `budget_exceeded` | stop: the month's budget is spent |
@@ -257,7 +274,7 @@ where jsonPayload.llm_usage.ok group by 1, 2, 3 order by usd desc
 **Alerts:** models failing in a location; Redis failing; Model Armor failing; requests with fields that are not allowed;
 the settings run failing or finding changes; gateway 5xx; the database down.
 
-**Upgrade LiteLLM:** put a new digest in [LITELLM_IMAGE](LITELLM_IMAGE) and the same version in
+**Upgrade LiteLLM:** read what changed in its Model Armor guardrail, then put a new digest in [LITELLM_IMAGE](LITELLM_IMAGE) and the same version in
 [terraform/config](terraform/config/main.tf), then `apply`. The signature is verified, the migration runs first, and an
 unready revision gets no traffic. Pin digests of the LTS line, and let a release age about a week unless it fixes a
 security fault: on 21 October 2026 the `latest` and `main-stable` tags briefly carried malware. Roll back by reverting the commit, if the
@@ -325,23 +342,38 @@ Tokens are usually the larger part: 100,000 calls of 1,000 tokens in and 300 out
   source parts.
 - **The salt key must never change**: it encrypts what LiteLLM keeps in the database.
 - **Apps that could go round** must not hold `aiplatform` roles in their projects; consider VPC Service Controls.
+- **Model Armor lowers the risk of a trick; it does not remove it.** Give apps and their tools only what they need.
 - **GitHub Actions** can deploy to all these projects. Its identity is accepted only from one repository's `gateway`
   environment: protect that environment with reviewers.
 
 Report a fault privately through GitHub's security advisories.
 
+**1.0.0 was rebuilt on 22 November 2026**, hours after it first appeared. In the first build (gateway image
+`sha256:844ee672ac10...`) Model Armor read only the last block of user messages: system messages, earlier turns, tool
+results and embeddings input were not read, and neither was a model's reasoning. A check that was skipped, as for a very
+long text, counted as a pass, and a provider's tools were let through. We found this ourselves. If you pulled 1.0.0 that
+day, pull it again, and compare the digest.
+
 ## What was tested, and what was not
 
-Tested on a real deployment, trial size, 22 November 2026, LiteLLM 1.108.15: 29 checks as each of two teams
+**The first build, on a real deployment**, trial size, 22 November 2026, LiteLLM 1.108.15: 29 checks as each of two teams
 ([apps/check.py](apps/check.py)); both failovers; drift; key rotation; the alerts for models and for settings; BigQuery
 usage; 600 calls from one client at 114 a second (`GET /v1/models`, median 165 ms, no errors); teardown.
 
-The published image (open source parts only) was tested on a workstation with real models and Model Armor: calls,
+**1.0.0 as it is now, every change** ([ci.yml](.github/workflows/ci.yml)): the image as it ships, with the real LiteLLM, pretend models
+and a pretend Model Armor: what was shown to Model Armor, forbidden words in every place a request can hold them, answers
+streamed and whole, skipped and failed checks, long requests. The same tests fail on the first build's setup.
+
+**1.0.0 as it is now, the real Model Armor** in `europe-west2` and `europe-west1`: normal questions and answers count as a full check;
+120,000 characters, in English and in Japanese, are checked whole; 300,000 come back as skipped, and are refused; an
+injection after 119,000 harmless characters is found.
+
+The first published image (open source parts only) was tested on a workstation with real models and Model Armor: calls,
 failover, streaming, the filter, limits, the migration, the admin UI and the Terraform settings step. The Cloud Run runs
 above used the same code on LiteLLM's full image.
 
-Not tested: the loss of a whole Google Cloud region, production sizes, sustained load, your own certificates, Shared VPC
-and on-premises callers, embeddings, and the drift schedule (its job was run by hand).
+Not tested: the rebuilt 1.0.0 deployed whole on Google Cloud (the six checks it adds to `apps/check.py` have not run there); the loss of a whole Google Cloud region, production sizes, sustained load, your own certificates, Shared VPC
+and on-premises callers, embeddings with a real model, and the drift schedule (its job was run by hand).
 
 ## Container images
 
