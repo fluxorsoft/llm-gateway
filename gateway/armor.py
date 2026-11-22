@@ -68,6 +68,20 @@ def incomplete(answer):
 
 
 class FullArmor(ModelArmorGuardrail):
+    # LiteLLM runs only the hooks it finds in the class itself, not inherited ones: without these lines a streamed answer
+    # would go out unchecked. gateway/tests/integration proves it does not.
+    async_moderation_hook = ModelArmorGuardrail.async_moderation_hook
+    async_post_call_success_hook = ModelArmorGuardrail.async_post_call_success_hook
+    async_post_call_streaming_iterator_hook = ModelArmorGuardrail.async_post_call_streaming_iterator_hook
+    apply_guardrail = ModelArmorGuardrail.apply_guardrail
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        missing = [n for n, v in vars(ModelArmorGuardrail).items()
+                   if n.startswith("async_") and callable(v) and n not in vars(FullArmor)]
+        if missing or not self.use_native_lifecycle_hooks:  # a new LiteLLM: look at it before it runs
+            raise RuntimeError("LiteLLM's Model Armor guardrail has changed; armor.py must be reviewed: " + ", ".join(missing))
+
     def _should_block_content(self, armor_response, allow_sanitization=False):
         return bool(incomplete(armor_response)) or super()._should_block_content(armor_response, allow_sanitization)
 
