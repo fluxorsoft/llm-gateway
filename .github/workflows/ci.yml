@@ -1,0 +1,35 @@
+# Every change: the filter's tests, the settings' rules, and valid Terraform. No cloud access.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+      - name: The request filter
+        run: python3 -m unittest discover -s gateway/tests
+      - name: Python and shell are well formed
+        run: |
+          python3 -m compileall -q gateway apps runner
+          bash -n scripts/*.sh && sh -n runner/run.sh
+      - name: Terraform is formatted and valid
+        run: |
+          terraform fmt -check -recursive terraform
+          for d in settings team platform config apps; do
+            terraform -chdir=terraform/$d init -backend=false -input=false > /dev/null
+            terraform -chdir=terraform/$d validate -no-color
+          done
+      - name: The settings' rules
+        run: terraform -chdir=terraform/settings test -no-color
+      - name: The example settings pass
+        run: terraform -chdir=terraform/settings plan -input=false -no-color -var dir=../../settings/example > /dev/null

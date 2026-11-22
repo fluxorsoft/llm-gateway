@@ -1,0 +1,7 @@
+models:
+  good: {locations: [eu], review_by: "2099-01-01"}
+  old: {locations: [eu], review_by: "2020-01-01"}
+residency:
+  eu: {locations: [eu]}
+  wide: {locations: [eu, global], approved_teams: []}
+limits: {max_monthly_usd: 100, max_key_days: 90}

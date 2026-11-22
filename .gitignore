@@ -1,0 +1,12 @@
+.env
+*.tfstate*
+.terraform/
+*.tfvars
+__pycache__/
+*.pem
+*.tfplan
+settings/live/
+.gcloudignore.local
+*.tfvars.json
+spikes/
+.vscode/

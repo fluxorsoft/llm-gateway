@@ -1,0 +1,14 @@
+# The support team: the EU first, the global location when the EU one is unavailable (approved in the catalogue).
+owner: support-leads@example.com
+project: support-project-id
+residency: eu-then-global
+models:
+  chat:
+    model: gemini-3.5-flash
+    locations: [eu, global]     # tried in this order
+budget_monthly_usd: 10
+limits: {rpm: 60, tpm: 100000}
+keys: [1]
+key_days: 30
+app_service_account: llm-app
+network: {region: europe-west1, cidr: 10.71.0.0/24}

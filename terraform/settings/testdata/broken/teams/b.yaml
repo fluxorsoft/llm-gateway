@@ -1,0 +1,9 @@
+owner: b@example.com
+project: shared
+residency: eu
+models: {x: {model: good, locations: [global]}}
+budget_monthly_usd: 1
+limits: {rpm: 1, tpm: 1}
+keys: [1]
+key_days: 1
+app_service_account: app

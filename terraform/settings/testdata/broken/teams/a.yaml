@@ -1,0 +1,13 @@
+owner: a@example.com
+project: shared
+residency: wide
+models:
+  x: {model: none, locations: [eu]}
+  y: {model: old, locations: [eu]}
+  z: {model: good, locations: [global], fallback: z}
+  w: {model: good, locations: []}
+budget_monthly_usd: 1000
+limits: {rpm: 0, tpm: 1}
+keys: [1, 1]
+key_days: 400
+app_service_account: app

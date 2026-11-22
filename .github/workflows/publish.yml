@@ -1,0 +1,35 @@
+# Publishes the three images to GHCR, with the example settings, and signs them (keyless). Needs no cloud access.
+name: publish
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      - name: Log in to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Verify, build, push
+        run: |
+          REPO="ghcr.io/${GITHUB_REPOSITORY,,}" scripts/images.sh > images.json
+          jq . images.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: The gateway image holds no Enterprise parts
+        run: |
+          id="$(docker create "$(jq -r .gateway images.json)")"
+          docker export "$id" | tar -t > files.txt
+          ! grep -iE "litellm_enterprise|^app/enterprise/" files.txt
+      - name: Tag and sign
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for i in gateway runner app; do
+            ref="$(jq -r ".$i" images.json)"
+            docker buildx imagetools create -t "${ref%@*}:$version" "$ref"
+            cosign sign --yes "$ref"
+          done
