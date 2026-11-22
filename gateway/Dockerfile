@@ -9,7 +9,7 @@ FROM ${LITELLM_IMAGE} AS open
 USER root
 RUN rm -rf /app/enterprise /app/.venv/lib/python3.*/site-packages/litellm_enterprise* /opt/liteadmin /app/docker \
     && test -z "$(find / -xdev -iname '*litellm_enterprise*' -not -path '/proc/*' 2>/dev/null)"
-COPY config.yaml guard.py usage.py /etc/litellm/
+COPY config.yaml guard.py armor.py usage.py /etc/litellm/
 
 FROM scratch
 COPY --from=open / /

@@ -1,0 +1,19 @@
+# The gateway's checks with pretend models and a pretend Model Armor (fake_google.py)
+model_list:
+  - {model_name: pretend, litellm_params: {model: openai/p, api_key: none, mock_response: "a plain answer"}}
+  - {model_name: pretend-bad, litellm_params: {model: openai/p, api_key: none, mock_response: "an answer with BLOCKWORD"}}
+  - {model_name: pretend-skip, litellm_params: {model: openai/p, api_key: none, mock_response: "an answer with SKIPWORD"}}
+  - {model_name: pretend-embed, litellm_params: {model: openai/e, api_key: none, mock_response: [0.1, 0.2]}}
+litellm_settings: {drop_params: true, turn_off_message_logging: true}
+general_settings: {master_key: sk-test}
+guardrails:
+  - guardrail_name: model-armor
+    litellm_params:
+      guardrail: armor.FullArmor
+      mode: [pre_call, post_call]
+      template_id: t
+      project_id: example-project
+      location: europe-west1
+      api_endpoint: os.environ/ARMOR_ENDPOINT
+      default_on: true
+      fail_on_error: true

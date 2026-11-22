@@ -35,7 +35,7 @@ general_settings:
 guardrails:
   - guardrail_name: model-armor
     litellm_params:
-      guardrail: model_armor
+      guardrail: armor.FullArmor   # reads every message and refuses what it cannot check whole; see armor.py
       mode: [pre_call, post_call]
       template_id: os.environ/ARMOR_TEMPLATE
       project_id: os.environ/ARMOR_PROJECT

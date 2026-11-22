@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from guard import Filter  # noqa: E402
 
-OK = {"model": "m", "messages": []}
+OK = {"model": "m", "messages": [{"role": "user", "content": "hello"}]}
 
 
 async def app(scope, receive, send):
@@ -48,6 +48,37 @@ class GuardTest(unittest.TestCase):
                       "timeout", "guardrails", "cache", "no-log", "tags"):
             status, _ = call({**OK, field: "x"})
             self.assertEqual(status, 400, field)
+
+    def test_only_the_apps_own_functions_are_tools(self):
+        fn = {"type": "function", "function": {"name": "f", "description": "d", "parameters": {"type": "object"}}}
+        self.assertEqual(call({**OK, "tools": [fn], "tool_choice": "auto"})[0], 200)
+        self.assertEqual(call({**OK, "tools": [fn], "tool_choice": {"type": "function", "function": {"name": "f"}}})[0], 200)
+        for tool in ({"google_search": {}}, {"googleSearch": {}}, {"type": "web_search"}, {"url_context": {}}, {"codeExecution": {}},
+                     {"type": "computer_use"}, {"googleMaps": {}}, {"enterpriseWebSearch": {}}, {"type": "mcp", "server_url": "x"},
+                     {**fn, "google_search": {}}, {"retrieval": {"vertex_rag_store": {}}}, {"type": "function"}, "x"):
+            self.assertEqual(call({**OK, "tools": [tool]})[0], 400, tool)
+        self.assertEqual(call({**OK, "tool_choice": {"type": "web_search"}})[0], 400)
+
+    def test_messages_are_text_in_plain_shapes(self):
+        good = [{"role": "system", "content": "s"}, {"role": "user", "content": [{"type": "text", "text": "u"}]},
+                {"role": "assistant", "content": None, "tool_calls": [
+                    {"id": "1", "type": "function", "function": {"name": "f", "arguments": "{}"}}]},
+                {"role": "tool", "tool_call_id": "1", "content": "r"}]
+        self.assertEqual(call({**OK, "messages": good})[0], 200)
+        for m in ({"role": "user", "content": [{"type": "image_url", "image_url": {"url": "http://x"}}]},
+                  {"role": "user", "content": [{"type": "file", "file": {"file_data": "x"}}]},
+                  {"role": "user", "content": [{"type": "text", "text": "x", "cache_control": {}}]},
+                  {"role": "user", "content": "x", "thinking_blocks": []}, {"role": "user", "content": "x", "images": []},
+                  {"role": "model", "content": "x"}, {"role": "user", "content": {"text": "x"}}, "x",
+                  {"role": "assistant", "tool_calls": [{"id": "1", "type": "function", "function": {"name": "f", "arguments": {}}}]}):
+            self.assertEqual(call({**OK, "messages": [m]})[0], 400, m)
+        for messages in ([], {}, "x"):
+            self.assertEqual(call({**OK, "messages": messages})[0], 400, messages)
+
+    def test_embeddings_input_is_text(self):
+        e = lambda i: call({"model": "m", "input": i}, path="/v1/embeddings")[0]  # noqa: E731
+        self.assertEqual((e("x"), e(["x", "y"])), (200, 200))
+        self.assertEqual((e([1, 2]), e([[1]]), e([]), e({"a": 1})), (400, 400, 400, 400))
 
     def test_duplicate_and_escaped_names_are_refused(self):
         self.assertEqual(call(b'{"vertex_project":"a","model":"m","vertex_project":"b"}')[0], 400)

@@ -4,6 +4,8 @@ The filter is an ASGI middleware, so it sees the raw request before LiteLLM does
 
 - only the inference paths exist (no UI, no admin API, no pass-through routes);
 - a request carries only the fields below, so a caller cannot choose a project, a location, a key or a base URL;
+- messages are text in plain shapes, and tools are the app's own functions: a provider's tools (web search, opening an
+  address, running code) would act from the provider's side, where this network's walls do not reach;
 - headers are kept by name, so LiteLLM's control headers never reach it;
 - the body passed on is rebuilt from the parsed one: the filter and LiteLLM can never read it differently.
 
@@ -28,6 +30,57 @@ PATHS = {("POST", "/v1/chat/completions"): CHAT,
 KEEP_HEADERS = {b"authorization", b"accept", b"host", b"user-agent", b"x-request-id", b"traceparent",
                 b"x-cloud-trace-context"}
 MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", "10000000"))
+
+
+ROLES = {"system", "developer", "user", "assistant", "tool"}
+
+
+def only(value, *fields):
+    return isinstance(value, dict) and not set(value) - set(fields)
+
+
+def text(value):
+    return isinstance(value, str) or (isinstance(value, list) and all(
+        only(p, "type", "text") and p.get("type") == "text" and isinstance(p.get("text"), str) for p in value))
+
+
+def function_call(c):
+    return (only(c, "id", "type", "function", "index") and c.get("type", "function") == "function"
+            and only(c.get("function"), "name", "arguments")
+            and all(isinstance(v, str) for v in c["function"].values()))
+
+
+def shape(data):
+    """What is wrong with the values of a request whose fields are allowed, or None."""
+    messages = data.get("messages")
+    if messages is not None:
+        if not isinstance(messages, list) or not messages:
+            return "messages must be a list"
+        for m in messages:
+            if not only(m, "role", "content", "name", "tool_calls", "tool_call_id"):
+                return "a message has only role, content, name, tool_calls and tool_call_id"
+            if m.get("role") not in ROLES:
+                return "a message's role is one of " + ", ".join(sorted(ROLES))
+            if not (m.get("content") is None or text(m["content"])):
+                return "a message's content is text"
+            calls = m.get("tool_calls")
+            if calls is not None and not (isinstance(calls, list) and all(function_call(c) for c in calls)):
+                return "tool_calls are function calls"
+    tools = data.get("tools")
+    if tools is not None and not (isinstance(tools, list) and all(
+            only(t, "type", "function") and t.get("type") == "function"
+            and only(t.get("function"), "name", "description", "parameters", "strict")
+            and isinstance(t["function"].get("name"), str) for t in tools)):
+        return "tools are the app's own functions"
+    choice = data.get("tool_choice")
+    if not (choice in (None, "none", "auto", "required") if not isinstance(choice, dict) else
+            only(choice, "type", "function") and choice.get("type") == "function" and only(choice.get("function"), "name")):
+        return "tool_choice is none, auto, required or one of the app's functions"
+    given = data.get("input")
+    if given is not None and not (isinstance(given, str) or (isinstance(given, list) and given and all(
+            isinstance(t, str) for t in given))):
+        return "input is text"
+    return None
 
 
 class Filter:
@@ -68,6 +121,9 @@ class Filter:
             bad = sorted(set(data) - fields)
             if bad:
                 return await refuse(send, 400, "fields not allowed: " + ", ".join(bad)[:300])
+            wrong = shape(data)
+            if wrong:
+                return await refuse(send, 400, "not allowed: " + wrong)
             body = json.dumps(data).encode()
             headers += [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
 
