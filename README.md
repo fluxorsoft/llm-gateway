@@ -356,23 +356,26 @@ day, pull it again, and compare the digest.
 
 ## What was tested, and what was not
 
-**The first build, on a real deployment**, trial size, 22 November 2026, LiteLLM 1.108.15: 29 checks as each of two teams
-([apps/check.py](apps/check.py)); both failovers; drift; key rotation; the alerts for models and for settings; BigQuery
-usage; 600 calls from one client at 114 a second (`GET /v1/models`, median 165 ms, no errors); teardown.
+**The first build, on a real deployment**, trial size, 22 November 2026, LiteLLM 1.108.15: 29 checks as each of two
+teams; both failovers; drift; key rotation; the alerts for models and for settings; BigQuery usage; 600 calls from one
+client at 114 a second (`GET /v1/models`, median 165 ms, no errors); teardown.
 
-**1.0.0 as it is now, every change** ([ci.yml](.github/workflows/ci.yml)): the image as it ships, with the real LiteLLM, pretend models
-and a pretend Model Armor: what was shown to Model Armor, forbidden words in every place a request can hold them, answers
-streamed and whole, skipped and failed checks, long requests. The same tests fail on the first build's setup.
+**1.0.0 as it is now, every change** ([ci.yml](.github/workflows/ci.yml)): the image as it ships, with the real LiteLLM,
+pretend models and a pretend Model Armor: what was shown to Model Armor, forbidden words in every place a request can
+hold them, answers streamed and whole, skipped and failed checks, long requests. The same tests fail on the first
+build's setup.
 
-**1.0.0 as it is now, the real Model Armor** in `europe-west2` and `europe-west1`: normal questions and answers count as a full check;
-120,000 characters, in English and in Japanese, are checked whole; 300,000 come back as skipped, and are refused; an
-injection after 119,000 harmless characters is found.
+**1.0.0 as it is now, the real Model Armor** in `europe-west2` and `europe-west1`: normal questions and answers count as
+a full check; 120,000 characters, in English and in Japanese, are checked whole; 300,000 come back as skipped, and are
+refused; an injection after 119,000 harmless characters is found.
 
-The first published image (open source parts only) was tested on a workstation with real models and Model Armor: calls,
-failover, streaming, the filter, limits, the migration, the admin UI and the Terraform settings step. The Cloud Run runs
-above used the same code on LiteLLM's full image.
+**1.0.0 as it is now, deployed whole** on 22 November 2026 from the published images (the runner with our settings
+added), trial size, two regions: all 35 checks ([apps/check.py](apps/check.py)) as each of the two teams, with real
+models and the real Model Armor; a streamed answer with a card number is blocked, and a clean one passes; the settings
+plan finds no change. The failover, drift, rotation, alert and load tests above ran on the first build, and were not
+repeated.
 
-Not tested: the rebuilt 1.0.0 deployed whole on Google Cloud (the six checks it adds to `apps/check.py` have not run there); the loss of a whole Google Cloud region, production sizes, sustained load, your own certificates, Shared VPC
+Not tested: the loss of a whole Google Cloud region, production sizes, sustained load, your own certificates, Shared VPC
 and on-premises callers, embeddings with a real model, and the drift schedule (its job was run by hand).
 
 ## Container images
