@@ -61,6 +61,7 @@ for p in $TEAM_PROJECTS; do
   done
 done
 if [ -n "${VPC_SC_POLICY:-}" ]; then  # the data perimeter (vpc_sc): the deployer edits perimeters in that policy only
+  g services enable accesscontextmanager.googleapis.com
   gcloud access-context-manager policies add-iam-policy-binding "${VPC_SC_POLICY#accessPolicies/}" --quiet     --member="serviceAccount:$deployer" --role=roles/accesscontextmanager.policyEditor --format=none
 fi
 echo
