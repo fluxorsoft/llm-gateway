@@ -21,7 +21,7 @@ jobs:
       - name: The onedoorai package builds, installs and runs
         run: |
           python3 -m pip install -q build==1.2.2.post1
-          python3 -m build -q --wheel --outdir dist .
+          python3 -m build --wheel --outdir dist . > build.txt || { cat build.txt; exit 1; }
           python3 -m venv /tmp/w && /tmp/w/bin/pip install -q dist/onedoorai-*.whl
           /tmp/w/bin/onedoorai --version
           ! /tmp/w/bin/onedoorai admin 2> err.txt && grep -q "address is needed" err.txt
