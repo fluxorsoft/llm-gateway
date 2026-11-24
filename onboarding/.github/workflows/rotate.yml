@@ -1,0 +1,39 @@
+# Mondays: the next key-rotation step for each team that is due, as one pull request (onedoorai rotate). Step 1 adds the
+# next key; after the deploy, the team's services listed under restart: are restarted onto it; step 2 removes the old key.
+name: rotate
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  rotate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: org
+          fetch-depth: 0
+      - name: The pinned release
+        id: version
+        run: echo "version=$(tr -d '[:space:]' < org/GATEWAY_VERSION)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: fluxorsoft/llm-gateway
+          ref: ${{ steps.version.outputs.version }}
+          path: gw
+      - name: Due steps
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: org
+        run: |
+          PYTHONPATH=../gw/src python3 -m onedoorai rotate --settings settings --write | tee ../steps.json
+          git diff --quiet && { echo "no rotation due"; exit 0; }
+          branch="rotate-$(date -u +%Y%m%d)"
+          git checkout -b "$branch"
+          git -c user.name="rotate" -c user.email="rotate@users.noreply.github.com" commit -qam "Key rotation, $(date -u +%Y-%m-%d)"
+          git push -q origin "$branch"
+          gh pr create --title "Key rotation, $(date -u +%Y-%m-%d)" --body "$(jq -r '"- \(.team): \(.step) (keys \(.keys) -> \(.next), \(.age_days) days)"' ../steps.json)"

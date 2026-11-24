@@ -1,0 +1,29 @@
+# Mondays: a pull request when the gateway has a newer release. Read its release notes before merging; merging runs the
+# deploy with the new release (use the upgrade action for a new LiteLLM version: one region first).
+name: release-watch
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Newer release?
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          now="$(tr -d '[:space:]' < GATEWAY_VERSION)"
+          new="$(gh release view --repo fluxorsoft/llm-gateway --json tagName --jq .tagName)"
+          [ "$new" != "$now" ] || { echo "up to date: $now"; exit 0; }
+          git checkout -b "gateway-$new"
+          echo "$new" > GATEWAY_VERSION
+          sed -i "s/deploy.yml@$now/deploy.yml@$new/; s/version: $now/version: $new/" .github/workflows/deploy.yml
+          git -c user.name="release-watch" -c user.email="release-watch@users.noreply.github.com" commit -qam "Gateway $new"
+          git push -q origin "gateway-$new"
+          gh pr create --title "Gateway $new" --body "A newer gateway release: https://github.com/fluxorsoft/llm-gateway/releases/tag/$new"

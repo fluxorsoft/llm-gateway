@@ -1,0 +1,6 @@
+{
+  "domain": "llm.internal.example.com",
+  "alert_email": "llm-platform@example.com",
+  "admin_members": ["group:llm-admins@example.com"],
+  "deletion_protection": true
+}

@@ -1,0 +1,48 @@
+name: Request access to the LLM gateway
+description: For an app team that needs language models. The platform team turns this into a team file.
+title: "Team request: "
+labels: [team-request]
+body:
+  - type: input
+    id: team
+    attributes: {label: Team name, description: "Short, lower case, for example orders"}
+    validations: {required: true}
+  - type: input
+    id: owner
+    attributes: {label: Owner, description: "The person or group who approves this team's file and receives its alerts"}
+    validations: {required: true}
+  - type: input
+    id: project
+    attributes: {label: Google Cloud project, description: "Where the team's model calls run and are billed"}
+    validations: {required: true}
+  - type: textarea
+    id: job
+    attributes: {label: The job, description: "What the app does with a model, in a few sentences"}
+    validations: {required: true}
+  - type: dropdown
+    id: data
+    attributes: {label: Data sent to the model, options: ["No personal data", "Personal data of customers", "Personal data of staff", "Code", "Other (explain in the job)"], multiple: true}
+    validations: {required: true}
+  - type: dropdown
+    id: residency
+    attributes: {label: Where it may run, options: ["EU only (default)", "EU first, then anywhere (needs approval)"]}
+    validations: {required: true}
+  - type: input
+    id: models
+    attributes: {label: Models wanted, description: "From the catalogue, or describe the need"}
+  - type: input
+    id: budget
+    attributes: {label: Monthly budget (USD), description: "What the business case supports"}
+    validations: {required: true}
+  - type: textarea
+    id: people
+    attributes: {label: People (optional), description: "For developer tools: who needs a personal key, and a monthly limit each"}
+  - type: checkboxes
+    id: agree
+    attributes:
+      label: Agreed
+      options:
+        - label: Our app has no model access of its own and calls only the gateway's address
+          required: true
+        - label: The platform team may restart our app to rotate its key
+          required: true

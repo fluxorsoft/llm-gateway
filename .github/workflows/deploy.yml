@@ -1,4 +1,6 @@
-# Started by hand. Keyless: GitHub's identity is exchanged for a short-lived Google one, only in the gateway environment.
+# Started by hand here, or called by an organisation's onboarding repository (onboarding/ is its template), which passes the
+# gateway release to use; its settings are checked out into org/. Keyless: GitHub's identity is exchanged for a short-lived
+# Google one, only in the caller's gateway environment.
 #
 # plan      the images, and what step 1 would change
 # apply     images, step 1 (platform), step 2 (LiteLLM settings, in the VPC), the example apps, then the checks
@@ -15,6 +17,18 @@ on:
         type: choice
         options: [plan, apply, settings, checks, upgrade, destroy]
         default: plan
+  workflow_call:
+    inputs:
+      action:
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+        description: "The gateway release, for example v1.1.0"
+      gateway_repository:
+        type: string
+        default: fluxorsoft/llm-gateway
 permissions:
   contents: read
   id-token: write
@@ -26,7 +40,7 @@ env:
   NAME: llmgw
   REGION: ${{ vars.GCP_REGION || 'europe-west2' }}
   REPO_LOCATION: europe
-  SETTINGS_DIR: ${{ vars.SETTINGS_DIR || 'settings/example' }}
+  SETTINGS_DIR: ${{ inputs.version && 'org/settings' || vars.SETTINGS_DIR || 'settings/example' }}
   TF_IN_AUTOMATION: "1"
   TF_INPUT: "0"
 jobs:
@@ -36,6 +50,15 @@ jobs:
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.version && inputs.gateway_repository || github.repository }}
+          ref: ${{ inputs.version || github.ref }}
+      - name: The organisation's settings
+        if: inputs.version
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: org
+          fetch-depth: 2
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ vars.GCP_PROVIDER }}
@@ -49,7 +72,7 @@ jobs:
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
 
       - name: The example's project ids
-        if: vars.EXAMPLE_PROJECTS != ''
+        if: vars.EXAMPLE_PROJECTS != '' && !inputs.version
         env:
           PROJECTS: ${{ vars.EXAMPLE_PROJECTS }} # JSON: {"orders-project-id": "...", "support-project-id": "..."}
         run: |
@@ -61,6 +84,8 @@ jobs:
         env:
           PLATFORM_TFVARS: ${{ vars.PLATFORM_TFVARS || '{}' }}
         run: |
+          # an onboarding repository keeps the platform's settings in a reviewed file
+          if [ -f org/settings/platform.json ]; then PLATFORM_TFVARS="$(cat org/settings/platform.json)"; fi
           gcloud auth configure-docker "$REPO_LOCATION-docker.pkg.dev" --quiet
           none="none@sha256:$(printf '0%.0s' $(seq 64))"
           jq --arg p "$PROJECT" --arg d "../../../$SETTINGS_DIR" --arg n "$none" \
@@ -92,6 +117,19 @@ jobs:
       - name: Step 2, LiteLLM settings
         if: contains(fromJSON('["apply", "settings"]'), inputs.action)
         run: gcloud run jobs execute "$NAME-config" --project="$PROJECT" --region="$REGION" --update-env-vars=MODE=apply --wait
+
+      - name: Restart the apps whose team's keys changed
+        if: contains(fromJSON('["apply", "settings"]'), inputs.action) && inputs.version
+        run: |
+          # a team file may list its services under restart: [{service, region}]; each reads its key when it starts
+          for f in $(git -C org diff --name-only HEAD~1 HEAD -- settings/teams/ 2>/dev/null); do
+            [ -f "org/$f" ] || continue
+            project="$(yq -r '.project' "org/$f")"
+            yq -o=json -I=0 '.restart // [] | .[]' "org/$f" | while read -r r; do
+              gcloud run services update "$(jq -r .service <<< "$r")" --project="$project" --region="$(jq -r .region <<< "$r")"                 --update-env-vars="LLM_KEY_CHANGED_AT=$(date -u +%Y%m%dT%H%M%SZ)" --quiet > /dev/null
+              echo "restarted $(jq -r .service <<< "$r") in $project"
+            done
+          done
 
       - name: The example apps
         if: inputs.action == 'apply'

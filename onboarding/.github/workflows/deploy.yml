@@ -1,0 +1,23 @@
+# Merges to main apply the settings; anything else is started by hand. The gateway's own workflow does the work, at the
+# release pinned here and in GATEWAY_VERSION (release-watch.yml keeps the three in step).
+name: deploy
+on:
+  push:
+    branches: [main]
+    paths: ["settings/**", "GATEWAY_VERSION"]
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        options: [plan, apply, settings, checks, upgrade, destroy]
+        default: plan
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  gateway:
+    uses: fluxorsoft/llm-gateway/.github/workflows/deploy.yml@v1.1.0
+    with:
+      action: ${{ inputs.action || 'settings' }}
+      version: v1.1.0
+    secrets: inherit
