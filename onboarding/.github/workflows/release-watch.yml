@@ -44,6 +44,6 @@ jobs:
             [ -z "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')" ] \
               || { echo "already open: $title"; exit 0; }
             gh issue create --title "$title" --body "$(printf '%s\n' "A newer gateway release: $notes" "" \
-              "After reading the release notes, change \`$now\` to \`$new\` in three places, in one pull request:" "" \
+              "After reading the release notes, change \`$now\` to \`$new\` in one pull request:" "" \
               "- \`GATEWAY_VERSION\`" "- \`.github/workflows/deploy.yml\`: \`uses: ...deploy.yml@$now\` and \`version: $now\`")"
           fi
