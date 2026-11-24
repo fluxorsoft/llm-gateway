@@ -14,6 +14,13 @@ locals {
   teams     = { for f in fileset("${var.dir}/teams", "*.yaml") : trimsuffix(f, ".yaml") => yamldecode(file("${var.dir}/teams/${f}")) }
   required  = ["owner", "project", "residency", "models", "budget_monthly_usd", "limits", "keys", "key_days", "app_service_account"]
 
+  # The settings name no cloud and no gateway unless they must. Every field below defaults to what 1.0.0 did, so its files
+  # plan unchanged. A value this version cannot serve yet is refused here, with the reason, rather than half-applied.
+  schema    = try(local.catalogue.schema, 1)
+  readable  = 2 # the newest settings schema this version reads
+  clouds    = ["gcp"]
+  providers = ["vertex"]
+
   # a file with a missing field is reported once, and left out of the other checks
   whole = { for t, v in local.teams : t => v if alltrue([for f in local.required : contains(keys(v), f)]) }
 
@@ -27,6 +34,9 @@ locals {
   } }]...)
 
   errors = concat(
+    local.schema > local.readable ? ["catalogue: settings schema ${local.schema} needs a newer gateway; this version reads up to ${local.readable}"] : [],
+    [for t, v in local.whole : "${t}: cloud '${try(v.cloud, "gcp")}' is not available in this version (available: ${join(", ", local.clouds)})" if !contains(local.clouds, try(v.cloud, "gcp"))],
+    [for m, c in local.catalogue.models : "catalogue: model '${m}' has provider '${try(c.provider, "vertex")}', not available in this version (available: ${join(", ", local.providers)})" if !contains(local.providers, try(c.provider, "vertex"))],
     [for t, v in local.teams : "${t}: missing ${join(", ", setsubtract(local.required, keys(v)))}" if !contains(keys(local.whole), t)],
     [for t in keys(local.teams) : "${t}: a team name is 2 to 20 lower-case letters, digits and hyphens" if !can(regex("^[a-z][a-z0-9-]{1,19}$", t))],
     [for t, v in local.whole : "${t}: residency '${v.residency}' is not in the catalogue" if !contains(keys(local.catalogue.residency), v.residency)],
@@ -46,7 +56,7 @@ locals {
 }
 
 output "teams" {
-  value = local.whole
+  value = { for t, v in local.whole : t => merge(v, { cloud = try(v.cloud, "gcp") }) }
   precondition {
     condition     = length(local.errors) == 0
     error_message = "The settings break these rules:\n- ${join("\n- ", local.errors)}"
@@ -54,6 +64,8 @@ output "teams" {
 }
 
 output "errors" { value = local.errors }
+
+output "schema" { value = local.schema }
 
 # one per team, model and location; order is the failover order
 output "deployments" {

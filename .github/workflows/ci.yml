@@ -33,6 +33,10 @@ jobs:
         run: terraform -chdir=core/settings test -no-color
       - name: The example settings pass
         run: terraform -chdir=core/settings plan -input=false -no-color -var dir=../../settings/example > /dev/null
+      - name: What this version cannot serve is refused, with its reason
+        run: |
+          ! terraform -chdir=core/settings plan -input=false -no-color -var dir=./testdata/later > later.txt 2>&1
+          for w in "schema 3" "cloud 'aws'" "provider 'bedrock'"; do grep -q "$w" later.txt || { cat later.txt; exit 1; }; done
 
   # the image as it ships, with the real LiteLLM, pretend models and a pretend Model Armor
   gateway:

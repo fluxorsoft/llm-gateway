@@ -1,6 +1,11 @@
 """One structured log line per call: who, which model, where, how many tokens, what it cost. Never the prompt or the
-answer. Cloud Logging keeps it, and a log sink copies it to BigQuery for chargeback."""
+answer. Cloud Logging keeps it, and a log sink copies it to BigQuery for chargeback.
+
+The fields are the contract (docs/CONTRACT.md): any cloud and any gateway writes the same ones. Version 2 adds cloud,
+gateway, door and task; version 1 readers ignore them.
+"""
 import json
+import os
 import re
 
 from litellm.integrations.custom_logger import CustomLogger
@@ -13,6 +18,11 @@ def record(kwargs, ok):
     where = re.search(r"/projects/([^/]+)/locations/([^/]+)/", base)
     error = p.get("error_information") or {}
     return {
+        "schema": 2,
+        "cloud": os.environ.get("GATEWAY_CLOUD", "gcp"),
+        "gateway": "litellm",
+        "door": os.environ.get("GATEWAY_DOOR", "apps"),
+        "task": (meta.get("requester_metadata") or {}).get("task"),
         "call_id": p.get("id"),
         "ok": ok,
         "team": meta.get("user_api_key_team_alias"),

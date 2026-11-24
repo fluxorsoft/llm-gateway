@@ -1,0 +1,8 @@
+# Settings for clouds and versions this gateway does not serve yet: each is refused, with its reason.
+schema: 3
+models:
+  good: {locations: [eu], review_by: "2099-01-01"}
+  elsewhere: {locations: [eu], review_by: "2099-01-01", provider: bedrock}
+residency:
+  eu: {locations: [eu]}
+limits: {max_monthly_usd: 100, max_key_days: 90}
