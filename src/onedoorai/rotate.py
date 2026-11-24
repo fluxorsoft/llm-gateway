@@ -4,7 +4,10 @@
      (the deploy makes key 3, writes it to the team's secret, and restarts the services listed under restart:)
   2. a day later, the old key goes:                                           keys: [2, 3] ->  keys: [3]
 
-  onedoorai rotate --settings settings [--write] [--lead 7]
+  onedoorai rotate --settings settings [--write] [--lead 7] [--now orders]
+
+--now TEAM takes that team's next step whatever its age (a key that leaked): run it once to add the next key, deploy, and
+once more to remove the old one.
 
 The age of a team's keys is when its `keys:` line last changed in Git. Prints one JSON line per change; with --write, edits
 the files (comments and everything else are kept). Exit 0 either way; the workflow opens a pull request when files changed.
@@ -21,14 +24,15 @@ DAYS = re.compile(r"^key_days:\s*([0-9]+)", re.M)
 DAY = 86400
 
 
-def decide(teams, changed_at, now, lead=7):
-    """teams: {team: {"keys": [n], "key_days": d}}; changed_at: {team: epoch seconds}. Returns the changes."""
+def decide(teams, changed_at, now, lead=7, forced=()):
+    """teams: {team: {"keys": [n], "key_days": d}}; changed_at: {team: epoch seconds}; forced: teams due now whatever
+    their age. Returns the changes."""
     out = []
     for team, t in sorted(teams.items()):
         keys, age = sorted(t["keys"]), (now - changed_at.get(team, now)) / DAY
-        if len(keys) == 1 and age >= t["key_days"] - lead:
+        if len(keys) == 1 and (team in forced or age >= t["key_days"] - lead):
             out.append({"team": team, "step": "add", "keys": keys, "next": keys + [keys[-1] + 1], "age_days": round(age, 1)})
-        elif len(keys) > 1 and age >= 1:
+        elif len(keys) > 1 and (team in forced or age >= 1):
             out.append({"team": team, "step": "remove", "keys": keys, "next": keys[-1:], "age_days": round(age, 1)})
     return out
 
@@ -60,10 +64,14 @@ def main(argv=None):
     p.add_argument("--settings", default="settings")
     p.add_argument("--write", action="store_true")
     p.add_argument("--lead", type=int, default=7, help="days before key_days to add the next key")
+    p.add_argument("--now", action="append", default=[], metavar="TEAM", help="this team's next step now, whatever its age")
     a = p.parse_args(argv)
     teams = read(a.settings)
+    unknown = sorted(set(a.now) - set(teams))
+    if unknown:
+        p.error(f"no such team: {', '.join(unknown)}")
     changed = {t: c for t, v in teams.items() if (c := last_change(v["file"])) is not None}
-    for change in decide(teams, changed, time.time(), a.lead):
+    for change in decide(teams, changed, time.time(), a.lead, set(a.now)):
         if a.write:
             write(teams[change["team"]]["file"], change["next"])
         print(json.dumps(change), flush=True)

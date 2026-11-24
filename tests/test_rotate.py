@@ -19,6 +19,13 @@ class RotateTest(unittest.TestCase):
         got = {c["team"]: (c["step"], c["next"]) for c in rotate.decide(teams, changed, now)}
         self.assertEqual(got, {"due": ("add", [2, 3]), "pair_old": ("remove", [3])})
 
+    def test_now_whatever_the_age(self):
+        now = 100 * DAY
+        teams = {"fresh": {"keys": [2], "key_days": 30}, "pair_new": {"keys": [2, 3], "key_days": 30}, "other": {"keys": [1], "key_days": 30}}
+        changed = {"fresh": now - 3600, "pair_new": now - 3600, "other": now - 3600}
+        got = {c["team"]: (c["step"], c["next"]) for c in rotate.decide(teams, changed, now, forced={"fresh", "pair_new"})}
+        self.assertEqual(got, {"fresh": ("add", [2, 3]), "pair_new": ("remove", [3])})
+
     def test_the_edit_keeps_everything_else(self):
         d = Path(tempfile.mkdtemp())
         (d / "teams").mkdir()

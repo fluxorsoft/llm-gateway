@@ -37,7 +37,8 @@ that it will stop accepting chosen values; the upgrade lane refuses a LiteLLM th
 nothing.
 
 Key rotation by pull request: `rotate.yml` in the onboarding repository adds the next key when one is within 7 days of `key_days`, the deploy restarts
-the services listed under `restart:` in the team file, and the next run removes the old key.
+the services listed under `restart:` in the team file, and the next run removes the old key. For a key that leaked, run `rotate.yml` by hand with `now:` set to the team: it opens
+the pull request for the next key at once; after that deploy, run it again to remove the old key.
 
 ## Budget alerts (`budget_alerts`)
 

@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: "0 7 * * 1"
   workflow_dispatch:
+    inputs:
+      now:
+        description: "a team whose next step is taken now, whatever its age (a key that leaked); empty: only what is due"
+        default: ""
 permissions:
   contents: write
   pull-requests: write
@@ -28,9 +32,10 @@ jobs:
       - name: Due steps
         env:
           GH_TOKEN: ${{ github.token }}
+          NOW: ${{ inputs.now }}
         working-directory: org
         run: |
-          PYTHONPATH=../gw/src python3 -m onedoorai rotate --settings settings --write | tee ../steps.json
+          PYTHONPATH=../gw/src python3 -m onedoorai rotate --settings settings --write ${NOW:+--now "$NOW"} | tee ../steps.json
           git diff --quiet && { echo "no rotation due"; exit 0; }
           branch="rotate-$(date -u +%Y%m%d)"
           git checkout -b "$branch"
