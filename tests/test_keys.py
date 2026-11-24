@@ -20,9 +20,12 @@ class FakeAdmin:
     def keys(self, team_id):
         return dict(self.existing.get(team_id[3:], {}))
 
-    def create(self, team_id, alias, models, days, value=None):
-        self.created.append((alias, models, days, value))
+    def create(self, team_id, alias, models, days, value=None, user_id=None, daily_usd=None):
+        self.created.append((alias, models, days, value) if user_id is None else (alias, user_id, daily_usd))
         return value or "sk-made-by-litellm"
+
+    def ensure_member(self, team_id, user_id):
+        self.members = getattr(self, "members", []) + [(team_id, user_id)]
 
     def delete(self, alias):
         self.deleted.append(alias)
@@ -35,7 +38,7 @@ def wanted(**teams):
 class KeysTest(unittest.TestCase):
     def run_keys(self, admin, w, apply=True, write=None):
         out, written = io.StringIO(), []
-        write = write or (lambda project, value: written.append((project, value)) or "7")
+        write = write or (lambda project, value, secret="llm-gateway-key": written.append((project, value) if secret == "llm-gateway-key" else (project, secret)) or "7")
         changes = keys.run(w, admin, write=write, apply=apply, say=lambda s, flush=False: out.write(s + "\n"))
         return changes, [json.loads(x) for x in out.getvalue().splitlines()], written
 
@@ -80,6 +83,16 @@ class KeysTest(unittest.TestCase):
         self.assertIn("create failed", lines[0]["action"])
 
 
+    def test_people_get_their_own_key_in_their_own_secret(self):
+        a = FakeAdmin({"orders": {"orders-2": {}, "orders.gone": {}}})
+        w = wanted(orders=([2], None))
+        w["orders"]["members"] = [{"id": "ann.lee@example.com", "handle": "ann-lee", "daily_usd": 5}]
+        _, lines, written = self.run_keys(a, w)
+        self.assertEqual(a.created, [("orders.ann-lee", "ann.lee@example.com", 5)])
+        self.assertEqual(a.members, [("id-orders", "ann.lee@example.com")])
+        self.assertEqual(written, [("orders-project", "llm-key-ann-lee")])
+        self.assertEqual(a.deleted, ["orders.gone"])  # no longer a member
+
     def test_the_probe_says_whether_chosen_values_are_still_accepted(self):
         class Refusing(FakeAdmin):
             def create(self, *a, **k):
@@ -88,6 +101,13 @@ class KeysTest(unittest.TestCase):
         self.assertTrue(keys.probe(a))
         self.assertEqual(len(a.deleted), 1)  # the probe key is removed
         self.assertFalse(keys.probe(Refusing({})))
+
+
+class HandleTest(unittest.TestCase):
+    def test_the_helper_and_the_settings_agree(self):
+        from onedoorai.key import handle
+        self.assertEqual(handle("Ann.Lee@example.com"), "ann-lee")
+        self.assertEqual(handle("x__y+z@example.com"), "x-y-z")
 
 
 if __name__ == "__main__":

@@ -21,6 +21,13 @@ locals {
   clouds    = ["gcp"]
   providers = ["vertex"]
 
+  # people with a personal key (the developers' door): a handle from the address names their key and their secret
+  members = { for t, v in local.whole : t => [for m in try(v.members, []) : {
+    id        = try(m.id, "")
+    handle    = substr(trim(replace(lower(split("@", try(m.id, ""))[0]), "/[^a-z0-9]+/", "-"), "-"), 0, 30)
+    daily_usd = try(m.daily_usd, null)
+  }] }
+
   # Who chooses a key's value: LiteLLM (schema 2 and later), or we do, as 1.0.0 did (schema 1, until switched).
   key_maker = try(local.catalogue.key_maker, local.schema >= 2 ? "litellm" : "terraform")
 
@@ -55,12 +62,16 @@ locals {
     [for t, v in local.whole : "${t}: limits need rpm and tpm above 0" if !try(v.limits.rpm > 0 && v.limits.tpm > 0, false)],
     [for t, v in local.whole : "${t}: key_days must be between 1 and ${local.catalogue.limits.max_key_days}" if !try(v.key_days >= 1 && v.key_days <= local.catalogue.limits.max_key_days, false)],
     [for t, v in local.whole : "${t}: keys must be one or more different whole numbers" if !try(length(v.keys) > 0 && length(distinct(v.keys)) == length(v.keys) && alltrue([for k in v.keys : k >= 1 && floor(k) == k]), false)],
+    flatten([for t, ms in local.members : [for m in ms : "${t}: a member's id is an email address, not '${m.id}'" if !can(regex("^[^@\\s]+@[^@\\s]+$", m.id))]]),
+    [for t, ms in local.members : "${t}: two members have the same name before the @" if length(distinct([for m in ms : m.handle])) != length(ms)],
+    flatten([for t, ms in local.members : [for m in ms : "${t}: ${m.id}'s daily_usd must be above 0 and at most the team's budget" if m.daily_usd != null && !try(m.daily_usd > 0 && m.daily_usd <= local.whole[t].budget_monthly_usd, false)]]),
+    [for t, v in local.whole : "${t}: member_monthly_usd must be above 0 and at most the team's budget" if try(v.member_monthly_usd, null) != null && !try(v.member_monthly_usd > 0 && v.member_monthly_usd <= v.budget_monthly_usd, false)],
     [for p in distinct([for t, v in local.whole : v.project]) : "project '${p}' is used by more than one team" if length([for t, v in local.whole : t if v.project == p]) > 1],
   )
 }
 
 output "teams" {
-  value = { for t, v in local.whole : t => merge(v, { cloud = try(v.cloud, "gcp") }) }
+  value = { for t, v in local.whole : t => merge(v, { cloud = try(v.cloud, "gcp"), members = local.members[t] }) }
   precondition {
     condition     = length(local.errors) == 0
     error_message = "The settings break these rules:\n- ${join("\n- ", local.errors)}"

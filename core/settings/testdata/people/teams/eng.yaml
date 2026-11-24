@@ -1,0 +1,13 @@
+owner: eng-leads@example.com
+project: eng-project
+residency: eu
+models: {code: {model: gemini-3.5-flash, locations: [eu]}}
+budget_monthly_usd: 100
+member_monthly_usd: 30
+members:
+  - {id: ann.lee@example.com, daily_usd: 5}
+  - {id: bob@example.com}
+limits: {rpm: 60, tpm: 100000}
+keys: [1]
+key_days: 30
+app_service_account: llm-app

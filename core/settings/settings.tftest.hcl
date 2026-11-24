@@ -18,6 +18,18 @@ run "the_example_is_valid" {
   }
 }
 
+run "people_get_a_handle_and_a_share" {
+  command = plan
+  variables {
+    dir = "./testdata/people"
+  }
+  expect_failures = [check.key_maker]
+  assert {
+    condition     = output.teams["eng"].members[0].handle == "ann-lee" && output.teams["eng"].members[1].daily_usd == null && length(output.errors) == 0
+    error_message = jsonencode(output.teams["eng"].members)
+  }
+}
+
 run "what_this_version_cannot_serve_is_refused" {
   command = plan
   variables {

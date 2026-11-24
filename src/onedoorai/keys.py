@@ -20,7 +20,9 @@ import sys
 import urllib.error
 import urllib.request
 
-MANAGED = re.compile(r"^[a-z][a-z0-9-]{1,19}-[0-9]+$")  # team-n: other keys (people's, agents') are never touched here
+MANAGED = re.compile(r"^[a-z][a-z0-9-]{1,19}-[0-9]+$")  # team-n
+PERSON = re.compile(r"^[a-z][a-z0-9-]{1,19}\.[a-z0-9-]{1,30}$")  # team.handle: a member's own key
+# any other key (made by hand, or by an agent's step) is never touched here
 
 
 def plan(wanted, existing):
@@ -32,6 +34,11 @@ def plan(wanted, existing):
         steps += [("keep", team, a) for a in sorted(want & have)]
         steps += [("create", team, a) for a in sorted(want - have, key=lambda a: int(a.rsplit("-", 1)[1]))]
         steps += [("delete", team, a) for a in sorted(have - want)]
+        people = {a for a in existing.get(team, {}) if PERSON.match(a) and a.split(".", 1)[0] == team}
+        wanted_people = {f"{team}.{m['handle']}" for m in w.get("members") or []}
+        steps += [("keep", team, a) for a in sorted(wanted_people & people)]
+        steps += [("create", team, a) for a in sorted(wanted_people - people)]
+        steps += [("delete", team, a) for a in sorted(people - wanted_people)]
     return steps
 
 
@@ -64,11 +71,25 @@ class Admin:
                 return out
             page += 1
 
-    def create(self, team_id, alias, models, days, value=None):
+    def create(self, team_id, alias, models, days, value=None, user_id=None, daily_usd=None):
         body = {"team_id": team_id, "key_alias": alias, "models": models, "duration": f"{days}d"}
         if value:
             body["key"] = value
+        if user_id:
+            body["user_id"] = user_id
+        if daily_usd:
+            body.update(max_budget=daily_usd, budget_duration="1d")
         return self.call("POST", "/key/generate", body)["key"]
+
+    def ensure_member(self, team_id, user_id):
+        """The person exists, and is a member of the team, so the team's member budget applies to them."""
+        for path, body in (("/user/new", {"user_id": user_id, "user_email": user_id, "user_role": "internal_user"}),
+                           ("/team/member_add", {"team_id": team_id, "member": {"role": "user", "user_id": user_id}})):
+            try:
+                self.call("POST", path, body)
+            except RuntimeError as e:
+                if "exist" not in str(e).lower() and "already" not in str(e).lower():
+                    raise
 
     def delete(self, alias):
         self.call("POST", "/key/delete", {"key_aliases": [alias]})
@@ -80,7 +101,7 @@ def _metadata_token():
     return json.load(urllib.request.urlopen(r, timeout=10))["access_token"]
 
 
-def write_secret(project, value, secret="llm-gateway-key", token=_metadata_token):
+def write_secret(project, value, secret="llm-gateway-key", token=_metadata_token):  # a person's: llm-key-<handle>
     """Adds the value as the newest version of the team's secret (Google Cloud Secret Manager). Returns the version."""
     r = urllib.request.Request(
         f"https://secretmanager.googleapis.com/v1/projects/{project}/secrets/{secret}:addVersion",
@@ -106,9 +127,16 @@ def run(wanted, admin, write=write_secret, apply=False, say=print):
             line["action"], line["why"] = "skipped", "the team is not in LiteLLM yet"
         elif action == "create":
             value = "sk-" + secrets.token_urlsafe(36) if w.get("maker", "litellm") == "terraform" else None
-            made = admin.create(teams[team]["team_id"], alias, teams[team].get("models") or w.get("models") or [], w["days"], value)
+            person = next((m for m in w.get("members") or [] if f"{team}.{m['handle']}" == alias), None)
+            models = teams[team].get("models") or w.get("models") or []
+            if person:
+                admin.ensure_member(teams[team]["team_id"], person["id"])
+                made = admin.create(teams[team]["team_id"], alias, models, w["days"], value, person["id"], person.get("daily_usd"))
+            else:
+                made = admin.create(teams[team]["team_id"], alias, models, w["days"], value)
             try:
-                line["secret_version"] = write(w["project"], made)
+                line["secret_version"] = (write(w["project"], made, "llm-key-" + person["handle"]) if person
+                                          else write(w["project"], made))
             except Exception as e:  # no key that nobody can use
                 admin.delete(alias)
                 line["action"], line["why"] = "create failed: the secret could not be written, the key was deleted", type(e).__name__

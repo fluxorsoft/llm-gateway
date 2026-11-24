@@ -3,7 +3,7 @@
 terraform {
   required_version = ">= 1.11"
   required_providers {
-    litellm = { source = "BerriAI/litellm", version = "~> 1.108.0" } # the version of the proxy
+    litellm = { source = "BerriAI/litellm", version = "~> 1.110.0" } # the version of the proxy
     google  = { source = "hashicorp/google", version = "~> 7.46" }
     random  = { source = "hashicorp/random", version = "~> 3.7" }
   }
@@ -72,7 +72,10 @@ resource "litellm_team" "this" {
   rpm_limit       = each.value.limits.rpm
   tpm_limit       = each.value.limits.tpm
   metadata        = { owner = each.value.owner }
-  depends_on      = [litellm_model.this]
+  # each person's share of the team's budget, when the team has people (null leaves 1.0.0 teams as they were)
+  team_member_budget          = try(each.value.member_monthly_usd, null)
+  team_member_budget_duration = try(each.value.member_monthly_usd, null) == null ? null : "1mo"
+  depends_on                  = [litellm_model.this]
 }
 
 # Keys are made by the key step after this one (onedoorai keys, run by the runner), so a key's value is never in Terraform
@@ -100,6 +103,7 @@ output "keys" {
     project = v.project
     models  = local.names[t]
     maker   = module.settings.key_maker
+    members = v.members
   } }
 }
 

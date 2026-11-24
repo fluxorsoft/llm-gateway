@@ -14,6 +14,12 @@ variable "gateway_project" { type = string }
 variable "gateway_network_id" { type = string }
 variable "domain" { type = string }
 variable "name" { type = string }
+variable "members" {
+  type        = list(object({ id = string, handle = string, daily_usd = optional(number) }))
+  default     = []
+  description = "People with a personal key; each gets a secret only they can read"
+}
+
 variable "peer_after" {
   type        = list(string)
   default     = []
@@ -134,6 +140,33 @@ resource "google_dns_managed_zone" "gateway" {
       network_url = var.gateway_network_id
     }
   }
+}
+
+# ---- personal keys: the runner writes them, only the person reads theirs -------------------------------------------------
+resource "google_secret_manager_secret" "person" {
+  for_each  = { for m in var.members : m.handle => m }
+  project   = var.project
+  secret_id = "llm-key-${each.key}"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.this]
+}
+
+resource "google_secret_manager_secret_iam_member" "person" {
+  for_each  = google_secret_manager_secret.person
+  project   = var.project
+  secret_id = each.value.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "user:${[for m in var.members : m.id if m.handle == each.key][0]}"
+}
+
+resource "google_secret_manager_secret_iam_member" "person_runner" {
+  for_each  = { for p in setproduct(keys(google_secret_manager_secret.person), ["roles/secretmanager.secretVersionManager", "roles/secretmanager.secretAccessor"]) : "${p[0]}/${p[1]}" => p }
+  project   = var.project
+  secret_id = google_secret_manager_secret.person[each.value[0]].id
+  role      = each.value[1]
+  member    = "serviceAccount:${var.runner_email}"
 }
 
 output "app_email" { value = google_service_account.app.email }

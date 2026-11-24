@@ -14,6 +14,7 @@ module "team" {
   runner_email        = google_service_account.runner.email
   app_service_account = each.value.app_service_account
   network             = try(each.value.network, null)
+  members             = each.value.members
   gateway_project     = var.project
   gateway_network_id  = google_compute_network.this.id
   domain              = var.domain

@@ -1,0 +1,20 @@
+# The models the central team allows, where each may run, and which teams may leave the default residency rule.
+models:
+  gemini-3.5-flash:
+    locations: [eu, global]
+    review_by: "2027-02-01"     # the plan fails after this date: check the model's retirement, then move it
+    timeout_seconds: 45         # then the next location is tried, and this one rests for two minutes
+  gemini-3.8-flash:
+    locations: [eu, global]
+    review_by: "2027-06-01"
+
+residency:
+  eu:                           # the default: model calls stay in the eu location
+    locations: [eu]
+  eu-then-global:
+    locations: [eu, global]
+    approved_teams: [support]   # leaving the default needs the team's name here
+
+limits:
+  max_monthly_usd: 100          # no team may ask for more
+  max_key_days: 90
