@@ -292,6 +292,10 @@ resource "google_compute_forwarding_rule" "db_copy" {
   load_balancing_scheme   = ""
   target                  = google_sql_database_instance.replica[0].psc_service_attachment_link
   allow_psc_global_access = true
+  lifecycle {
+    # a new copy (after a fail-back) has a new attachment; said at plan, or the provider changes its mind during apply
+    replace_triggered_by = [google_sql_database_instance.replica[0].psc_service_attachment_link]
+  }
 }
 
 output "db_failover" {

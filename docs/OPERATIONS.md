@@ -90,7 +90,7 @@ bucket), points the name back at the primary, restarts the gateways, and deletes
 between the export and the restart are lost: a few seconds of spend. Run the checks, then `apply`: it makes a new copy.
 
 Measured on trial size: the failover took about 6 minutes, nearly all of it the promotion; the fail-back about 6
-minutes; the new copy NEWCOPY. The scripts need `gcloud`, and `jq` or Python.
+minutes; the new copy about 7.5 minutes. The scripts need `gcloud`, and `jq` or Python.
 
 ## A load test
 
