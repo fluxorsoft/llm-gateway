@@ -53,6 +53,7 @@ class IdentityTest(unittest.TestCase):
 
         async def app(scope, receive, send):
             seen["auth"] = dict(scope["headers"]).get(b"authorization")
+            seen["told"] = {k: v for k, v in scope["headers"] if k.startswith(b"x-onedoor-")}
             seen["body"] = json.loads((await receive())["body"])
             await send({"type": "http.response.start", "status": 200, "headers": []})
             await send({"type": "http.response.body", "body": b"{}"})
@@ -72,9 +73,12 @@ class IdentityTest(unittest.TestCase):
 
         self.assertEqual(asyncio.run(call([(b"authorization", ("Bearer " + token()).encode()), (b"x-task-id", b"job-7")])), 200)
         self.assertEqual(seen["auth"], b"Bearer sk-agent")
-        self.assertEqual(seen["body"]["metadata"], {"agent": "sorter", "task": "job-7"})
+        self.assertEqual(seen["told"], {b"x-onedoor-agent": b"sorter", b"x-onedoor-task": b"job-7"})
+        self.assertNotIn("metadata", seen["body"])  # the body is never changed
         self.assertEqual(asyncio.run(call([(b"authorization", ("Bearer " + token(email="x@p.iam.gserviceaccount.com")).encode())])), 401)
         self.assertEqual(asyncio.run(call([(b"authorization", b"Bearer sk-plain"), (b"x-task-id", b"bad id!")])), 400)
+        asyncio.run(call([(b"authorization", b"Bearer sk-plain"), (b"x-onedoor-agent", b"forged")]))
+        self.assertEqual(seen["told"], {})  # a caller cannot set what the filter tells
         identity._identities = None
 
     def test_the_calls_per_task_cap(self):

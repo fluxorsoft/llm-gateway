@@ -234,8 +234,6 @@ class Filter:
                      and fields is not EMBEDDINGS else shape(data))
             if wrong:
                 return await refuse(send, 400, "not allowed: " + wrong)
-            if extra and fields in (CHAT, EMBEDDINGS):
-                data["metadata"] = extra  # read by the usage record; callers may not send metadata themselves
             body = json.dumps(data).encode()
             headers += [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
 
@@ -249,6 +247,10 @@ class Filter:
             if why:
                 return await rpc_refuse(send, data.get("id"), "the tool call: " + why)
             send = held(send, data.get("id"))
+
+        # what the filter itself knows, for the usage record, as headers only it can set (callers' own are dropped above),
+        # so every path carries them and no body is changed
+        headers += [(b"x-onedoor-" + k.replace("_", "-").encode(), str(v).encode()) for k, v in extra.items()]
 
         sent = False
 
@@ -350,6 +352,9 @@ def main():
     if role not in ("gateway", "developer", "admin"):
         raise SystemExit(f"GATEWAY_ROLE is {role!r}: use gateway, developer or admin")
     from litellm.proxy.proxy_server import app
+    from .fixes import apply
+
+    print(json.dumps({"severity": "INFO", "message": "gateway fixes applied", "fixes": apply()}), flush=True)
 
     if role in ("gateway", "developer"):
         app.add_middleware(Filter)

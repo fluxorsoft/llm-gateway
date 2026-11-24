@@ -11,8 +11,15 @@ import re
 from litellm.integrations.custom_logger import CustomLogger
 
 
+def told(kwargs):
+    """What the request filter told the usage record: its x-onedoor-* headers (callers cannot set them)."""
+    headers = ((kwargs.get("litellm_params") or {}).get("proxy_server_request") or {}).get("headers") or {}
+    return {k[len("x-onedoor-"):].replace("-", "_"): v for k, v in headers.items() if k.lower().startswith("x-onedoor-")}
+
+
 def record(kwargs, ok):
     p = kwargs.get("standard_logging_object") or {}
+    filt = told(kwargs)
     meta, hidden = p.get("metadata") or {}, p.get("hidden_params") or {}
     base = str(p.get("api_base") or hidden.get("api_base") or "")
     where = re.search(r"/projects/([^/]+)/locations/([^/]+)/", base)
@@ -22,9 +29,9 @@ def record(kwargs, ok):
         "cloud": os.environ.get("GATEWAY_CLOUD", "gcp"),
         "gateway": "litellm",
         "door": os.environ.get("GATEWAY_DOOR", "apps"),
-        "task": (meta.get("requester_metadata") or {}).get("task"),
-        "agent": (meta.get("requester_metadata") or {}).get("agent"),
-        "acting_for": (meta.get("requester_metadata") or {}).get("acting_for"),
+        "task": filt.get("task"),
+        "agent": filt.get("agent"),
+        "acting_for": filt.get("acting_for"),
         "tool": (p.get("mcp_tool_call_metadata") or {}).get("name"),
         "tool_server": (p.get("mcp_tool_call_metadata") or {}).get("mcp_server_name"),
         "call_id": p.get("id"),
