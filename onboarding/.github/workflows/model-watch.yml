@@ -1,0 +1,36 @@
+# Mondays: an issue for each catalogue model within 30 days of its review_by date, naming the teams that use it. The plan
+# already refuses a model past its date; this gives a month to test a replacement with each team's own examples first.
+name: model-watch
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: org
+      - name: The pinned release
+        id: version
+        run: echo "version=$(tr -d '[:space:]' < org/GATEWAY_VERSION)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: fluxorsoft/llm-gateway
+          ref: ${{ steps.version.outputs.version }}
+          path: gw
+      - name: Issues for models due
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PYTHONPATH=gw/src python3 -m onedoorai models --settings org/settings --days 30 | while read -r line; do
+            model="$(jq -r .model <<< "$line")"
+            title="Review model $model by $(jq -r .review_by <<< "$line")"
+            gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$title in:title" --json number --jq length | grep -qx 0 || continue
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$(jq -r '"Used by: \(.teams | join(", ")). \(.days_left) days left.\n\n- [ ] choose the replacement and add it to the catalogue\n- [ ] run each team'"'"'s own examples against it, and compare\n- [ ] change each team file to the replacement, through review\n- [ ] move review_by, or remove the old model"' <<< "$line")"
+          done
