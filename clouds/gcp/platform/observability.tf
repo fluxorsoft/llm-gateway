@@ -137,3 +137,38 @@ output "teams" {
 }
 
 data "google_project" "this" {}
+
+# ---- budget alerts: to the team's owner, and to the platform team -------------------------------------------------------
+locals {
+  owners = var.budget_alerts ? toset([for t in module.settings.teams : t.owner if can(regex("@", t.owner))]) : toset([])
+  budget_levels = var.budget_alerts ? merge([for t, v in module.settings.teams : {
+    "${t}/80"  = { team = t, owner = v.owner, level = "80", words = "has spent 80 per cent of its monthly budget" }
+    "${t}/100" = { team = t, owner = v.owner, level = "100", words = "has spent its monthly budget: calls are refused" }
+  }]...) : {}
+}
+
+resource "google_monitoring_notification_channel" "owner" {
+  for_each     = local.owners
+  display_name = "${var.name} budget: ${each.key}"
+  type         = "email"
+  labels       = { email_address = each.key }
+}
+
+resource "google_monitoring_alert_policy" "budget" {
+  for_each              = local.budget_levels
+  display_name          = "${var.name}: team ${each.value.team} ${each.value.words}"
+  combiner              = "OR"
+  notification_channels = concat(local.channels, contains(local.owners, each.value.owner) ? [google_monitoring_notification_channel.owner[each.value.owner].id] : [])
+  conditions {
+    display_name = "${each.value.team} at ${each.value.level} per cent"
+    condition_matched_log {
+      filter = "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"${var.name}-config\" AND jsonPayload.message=\"llm budget\" AND jsonPayload.team=\"${each.value.team}\" AND jsonPayload.level=\"${each.value.level}\""
+    }
+  }
+  alert_strategy {
+    notification_rate_limit {
+      period = "86400s" # once a day while it lasts
+    }
+    auto_close = "604800s"
+  }
+}

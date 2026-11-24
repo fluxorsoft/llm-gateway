@@ -28,6 +28,7 @@ case "${MODE:-plan}" in
     terraform apply -input=false -no-color -auto-approve || fail "terraform apply"
     keys --apply || fail "the key step"
     ;;
+  budgets) python -m onedoorai budgets || fail "the budget levels" ;;
   probe) keys --probe || fail "the upgrade is refused: this LiteLLM no longer accepts the keys' way of making values" ;;
   destroy) terraform destroy -input=false -no-color -auto-approve || fail "terraform destroy" ;;
   plan)
@@ -40,5 +41,5 @@ case "${MODE:-plan}" in
     [ "$code" = 2 ] && fail "the keys differ from the settings"
     [ "$code" = 0 ] || fail "the key step"
     ;;
-  *) fail "MODE is plan, apply, probe or destroy" ;;
+  *) fail "MODE is plan, apply, budgets, probe or destroy" ;;
 esac

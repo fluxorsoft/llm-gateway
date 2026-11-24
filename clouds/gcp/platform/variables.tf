@@ -59,6 +59,12 @@ variable "certificate_ids" {
   description = "Certificate Manager certificates (scope ALL_REGIONS) for the domain. Empty makes a private CA: for trials"
 }
 
+variable "budget_alerts" {
+  type        = bool
+  default     = false
+  description = "Every hour, tell each team's owner (and alert_email) when the team has spent 80 and 100 per cent of its monthly budget"
+}
+
 variable "spend_log_days" {
   type        = number
   default     = null

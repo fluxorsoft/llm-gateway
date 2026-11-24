@@ -12,9 +12,13 @@ def main(argv=None):
     a = sub.add_parser("admin", help="open a local door to the gateway's admin service (adds your Google identity)")
     a.add_argument("--url", help="the admin service's address (default: ADMIN_URL)")
     a.add_argument("--port", type=int, help="local port (default 9000)")
+    sub.add_parser("budgets", help="one line per team: how much of its budget is spent (run by the runner)")
     sub.add_parser("keys", help="make, keep and delete team keys (run by the runner)", add_help=False)
     if argv is None:
         argv = sys.argv[1:]
+    if argv[:1] == ["budgets"]:
+        from .budgets import main as budgets
+        return budgets(argv[1:])
     if argv[:1] == ["keys"]:
         from .keys import main as keys
         return keys(argv[1:])

@@ -109,6 +109,14 @@ jobs:
             gcloud run jobs execute "$team-check" --project="$project" --region="$region" --wait < /dev/null
           done
 
+      - name: Cost reports
+        if: contains(fromJSON('["apply", "checks"]'), inputs.action) && vars.USAGE_BIGQUERY != 'false'
+        run: |
+          dataset="$PROJECT.$(echo "$NAME" | tr - _)_usage"
+          for f in docs/reports/*.sql; do
+            sed "s/{{dataset}}/$dataset/g" "$f" | bq query --project_id="$PROJECT" --use_legacy_sql=false --quiet > /dev/null               || echo "::warning::$(basename "$f" .sql) not made yet: its columns appear after the first matching call"
+          done
+
       - name: Upgrade lane, 1 of 2 (one region first)
         if: inputs.action == 'upgrade'
         run: |

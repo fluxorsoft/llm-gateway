@@ -438,3 +438,34 @@ resource "google_cloud_scheduler_job" "drift" {
 output "canary_region" {
   value = try([for r in keys(var.regions) : r if r != var.primary_region][0], null)
 }
+
+# ---- budget alerts: every hour the runner writes one line per team; an alert per team and level reads them --------------
+resource "google_service_account" "budgets" {
+  count      = var.budget_alerts ? 1 : 0
+  account_id = "${var.name}-budgets"
+}
+
+resource "google_cloud_run_v2_job_iam_member" "budgets" {
+  count    = var.budget_alerts ? 1 : 0
+  name     = google_cloud_run_v2_job.runner.name
+  location = var.primary_region
+  role     = "roles/run.jobsExecutorWithOverrides" # MODE=budgets, and nothing else changes
+  member   = "serviceAccount:${google_service_account.budgets[0].email}"
+}
+
+resource "google_cloud_scheduler_job" "budgets" {
+  count    = var.budget_alerts ? 1 : 0
+  name     = "${var.name}-budgets"
+  region   = var.primary_region
+  schedule = "15 * * * *"
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project}/locations/${var.primary_region}/jobs/${google_cloud_run_v2_job.runner.name}:run"
+    body        = base64encode(jsonencode({ overrides = { containerOverrides = [{ env = [{ name = "MODE", value = "budgets" }] }] } }))
+    headers     = { "Content-Type" = "application/json" }
+    oauth_token {
+      service_account_email = google_service_account.budgets[0].email
+    }
+  }
+  depends_on = [google_cloud_run_v2_job_iam_member.budgets]
+}
