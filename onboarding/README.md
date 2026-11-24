@@ -19,7 +19,7 @@ Make a **private** repository from this folder: its settings name projects, and 
 |---|---|---|
 | `plan.yml` | every pull request | checks the settings against every rule, offline; a broken rule fails it, with every reason |
 | `deploy.yml` | merge to main; or by hand (`plan`, `apply`, `settings`, `checks`, `upgrade`, `destroy`) | calls the gateway's own workflow at the pinned release |
-| `release-watch.yml` | Mondays | opens a pull request when a newer gateway release is out |
+| `release-watch.yml` | Mondays | opens an issue when a newer gateway release is out (a pull request with a `RELEASE_WATCH_TOKEN` secret) |
 | `rotate.yml` | Mondays | opens a pull request for the next key-rotation step of each team that is due |
 | `model-watch.yml` | Mondays | opens an issue for each model within 30 days of its review date, naming the teams that use it |
 

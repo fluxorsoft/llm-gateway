@@ -14,7 +14,7 @@ team, and runs the gateway's own deploy workflow at that release. Its workflows:
 |---|---|---|
 | `plan.yml` | every pull request | checks the settings against every rule, offline |
 | `deploy.yml` | merge to main, or by hand | `plan`, `apply`, `settings`, `checks`, `upgrade`, `destroy` |
-| `release-watch.yml` | Mondays | a pull request when a newer gateway release is out |
+| `release-watch.yml` | Mondays | an issue (or, with `RELEASE_WATCH_TOKEN`, a pull request) when a newer gateway release is out |
 | `rotate.yml` | Mondays | a pull request for each team's next key-rotation step |
 | `model-watch.yml` | Mondays | an issue a month before a model's review date |
 
@@ -40,8 +40,10 @@ Key rotation by pull request: `rotate.yml` in the onboarding repository adds the
 the services listed under `restart:` in the team file, and the next run removes the old key. For a key that leaked, run `rotate.yml` by hand with `now:` set to the team: it opens
 the pull request for the next key at once; after that deploy, run it again to remove the old key. When a key is removed, the key step also disables the secret's
 versions that hold it, so its value is no longer readable. The organisation and the repository must both allow GitHub
-Actions to create pull requests (Settings, Actions, General), or `rotate.yml` and `release-watch.yml` push their branch
-and stop.
+Actions to create pull requests (Settings, Actions, General), or `rotate.yml` pushes its branch and stops.
+`release-watch.yml` opens an issue: GitHub's own token may not change the workflow file that pins the release; give it
+a `RELEASE_WATCH_TOKEN` secret (a fine-grained token on the repository: contents, pull requests and workflows) and it
+opens the pull request instead.
 
 ## Budget alerts (`budget_alerts`)
 

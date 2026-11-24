@@ -1,29 +1,49 @@
-# Mondays: a pull request when the gateway has a newer release. Read its release notes before merging; merging runs the
-# deploy with the new release (use the upgrade action for a new LiteLLM version: one region first).
+# Mondays: says when the gateway has a newer release. Read its release notes before moving; moving runs the deploy with the
+# new release (use the upgrade action for a new LiteLLM version: one region first).
+# GitHub's own token may not change files under .github/workflows/, and the pin lives in deploy.yml, so by default this
+# opens an issue with the change to make. With a secret RELEASE_WATCH_TOKEN (a fine-grained token on this repository:
+# contents, pull requests and workflows, read and write) it opens the pull request itself.
 name: release-watch
 on:
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  issues: write
 jobs:
   watch:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ secrets.RELEASE_WATCH_TOKEN || github.token }}
       - name: Newer release?
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_TOKEN: ${{ secrets.RELEASE_WATCH_TOKEN }}
         run: |
           now="$(tr -d '[:space:]' < GATEWAY_VERSION)"
-          new="$(gh release view --repo fluxorsoft/llm-gateway --json tagName --jq .tagName)"
-          [ "$new" != "$now" ] || { echo "up to date: $now"; exit 0; }
-          git checkout -b "gateway-$new"
-          echo "$new" > GATEWAY_VERSION
-          sed -i "s/deploy.yml@$now/deploy.yml@$new/; s/version: $now/version: $new/" .github/workflows/deploy.yml
-          git -c user.name="release-watch" -c user.email="release-watch@users.noreply.github.com" commit -qam "Gateway $new"
-          git push -q origin "gateway-$new"
-          gh pr create --title "Gateway $new" --body "A newer gateway release: https://github.com/fluxorsoft/llm-gateway/releases/tag/$new"
+          release='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          [[ "$now" =~ $release ]] || { echo "pinned to $now, which is not a release: nothing to compare"; exit 0; }
+          new="$(git ls-remote --tags --refs https://github.com/fluxorsoft/llm-gateway.git 'v*' | sed 's#.*refs/tags/##' \
+            | grep -E "$release" | sort -V | tail -1)"
+          [ -n "$new" ] || { echo "no release found"; exit 1; }
+          [ "$(printf '%s\n%s\n' "$now" "$new" | sort -V | tail -1)" != "$now" ] || { echo "up to date: $now"; exit 0; }
+          title="Gateway $new"
+          notes="https://github.com/fluxorsoft/llm-gateway/releases/tag/$new"
+          if [ -n "$PR_TOKEN" ]; then
+            git checkout -b "gateway-$new"
+            echo "$new" > GATEWAY_VERSION
+            sed -i "s/deploy.yml@$now/deploy.yml@$new/; s/version: $now/version: $new/" .github/workflows/deploy.yml
+            git -c user.name="release-watch" -c user.email="release-watch@users.noreply.github.com" commit -qam "$title"
+            git push -q origin "gateway-$new"
+            GH_TOKEN="$PR_TOKEN" gh pr create --title "$title" --body "A newer gateway release: $notes"
+          else
+            [ -z "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')" ] \
+              || { echo "already open: $title"; exit 0; }
+            gh issue create --title "$title" --body "$(printf '%s\n' "A newer gateway release: $notes" "" \
+              "After reading the release notes, change \`$now\` to \`$new\` in three places, in one pull request:" "" \
+              "- \`GATEWAY_VERSION\`" "- \`.github/workflows/deploy.yml\`: \`uses: ...deploy.yml@$now\` and \`version: $now\`")"
+          fi
