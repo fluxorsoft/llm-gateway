@@ -15,18 +15,24 @@ import urllib.request
 GATEWAY = """
 SELECT jsonPayload.llm_usage.project AS project, SUM(jsonPayload.llm_usage.cost_usd) AS usd
 FROM `{usage}.run_googleapis_com_stdout`
-WHERE jsonPayload.llm_usage.ok AND timestamp >= TIMESTAMP(DATE_SUB(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL 7 DAY))
-  AND timestamp < TIMESTAMP(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)))
+WHERE jsonPayload.llm_usage.ok AND timestamp >= {start}
+  AND timestamp < {end}
 GROUP BY project
 """
 BILLED = """
 SELECT project.id AS project, SUM(cost / IFNULL(NULLIF(currency_conversion_rate, 0), 1)) AS usd
 FROM `{billing}`
 WHERE service.description = 'Vertex AI' AND project.id IN UNNEST(@projects)
-  AND usage_start_time >= TIMESTAMP(DATE_SUB(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL 7 DAY))
-  AND usage_start_time < TIMESTAMP(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)))
+  AND usage_start_time >= {start}
+  AND usage_start_time < {end}
 GROUP BY project
 """
+
+
+WINDOWS = {  # last_week: the last full week (Monday to Sunday); last_day: the last 24 hours, for a first test
+    "last_week": (f"TIMESTAMP(DATE_SUB(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)), INTERVAL 7 DAY))", "TIMESTAMP(DATE_TRUNC(CURRENT_DATE(), WEEK(MONDAY)))"),
+    "last_day": ("TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)", "CURRENT_TIMESTAMP()"),
+}
 
 
 def compare(gateway, billed, above=10.0):
@@ -63,13 +69,15 @@ def main(argv=None):
     p.add_argument("--usage", required=True, help="the usage dataset, project.dataset")
     p.add_argument("--billing", required=True, help="the billing export table, project.dataset.table")
     p.add_argument("--above", type=float, default=float(os.environ.get("PRICE_CHECK_ABOVE", "10")))
+    p.add_argument("--window", choices=sorted(WINDOWS), default=os.environ.get("PRICE_CHECK_WINDOW", "last_week"))
     a = p.parse_args(argv)
     project = a.usage.split(".")[0]
-    gateway = query(project, GATEWAY.format(usage=a.usage))
+    start, end = WINDOWS[a.window]
+    gateway = query(project, GATEWAY.format(usage=a.usage, start=start, end=end))
     if not gateway:
-        print(json.dumps({"message": "llm price check", "level": "ok", "why": "no gateway use last week"}), flush=True)
+        print(json.dumps({"message": "llm price check", "level": "ok", "why": f"no gateway use in the window ({a.window})"}), flush=True)
         return 0
-    billed = query(project, BILLED.format(billing=a.billing), [{"name": "projects", "parameterType": {"type": "ARRAY", "arrayType": {"type": "STRING"}},
+    billed = query(project, BILLED.format(billing=a.billing, start=start, end=end), [{"name": "projects", "parameterType": {"type": "ARRAY", "arrayType": {"type": "STRING"}},
                                                                 "parameterValue": {"arrayValues": [{"value": p} for p in gateway]}}])
     for line in compare(gateway, billed, a.above):
         print(json.dumps(line), flush=True)
