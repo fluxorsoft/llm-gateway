@@ -74,6 +74,12 @@ variable "price_check" {
   description = "Every Monday, compare last week's gateway cost per team project with Google's bill for Vertex AI"
 }
 
+variable "db_replica" {
+  type        = bool
+  default     = false
+  description = "A copy of the database in the second gateway region, kept up to date, for clouds/gcp/scripts/db_failover.sh"
+}
+
 variable "spend_log_days" {
   type        = number
   default     = null

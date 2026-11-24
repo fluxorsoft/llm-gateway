@@ -195,3 +195,73 @@ resource "google_secret_manager_secret_version" "redis_ca" {
   secret      = google_secret_manager_secret.redis_ca[each.key].id
   secret_data = join("\n", [for c in google_redis_instance.this[each.key].server_ca_certs : c.cert])
 }
+
+# ---- a copy in the second region (db_replica): promoted by clouds/gcp/scripts/db_failover.sh ----------------------------
+locals {
+  replica_region = try([for r in keys(var.regions) : r if r != var.primary_region][0], null)
+}
+
+check "db_replica_region" {
+  assert {
+    condition     = !var.db_replica || local.replica_region != null
+    error_message = "db_replica needs a second gateway region."
+  }
+}
+
+resource "google_sql_database_instance" "replica" {
+  count                = var.db_replica && local.replica_region != null ? 1 : 0
+  name                 = "${var.name}-${random_id.db.hex}-copy"
+  region               = local.replica_region
+  database_version     = "POSTGRES_16"
+  master_instance_name = google_sql_database_instance.this.name
+  deletion_protection  = var.deletion_protection
+  replica_configuration {
+    failover_target = false
+  }
+  settings {
+    edition                     = "ENTERPRISE"
+    tier                        = var.size.db_tier
+    availability_type           = "ZONAL"
+    disk_autoresize             = true
+    deletion_protection_enabled = var.deletion_protection
+    ip_configuration {
+      ipv4_enabled = false
+      ssl_mode     = "ENCRYPTED_ONLY"
+      psc_config {
+        psc_enabled               = true
+        allowed_consumer_projects = [var.project]
+      }
+    }
+  }
+}
+
+resource "google_compute_address" "db_copy" {
+  count        = length(google_sql_database_instance.replica)
+  name         = "${var.name}-db-copy"
+  region       = local.replica_region
+  subnetwork   = google_compute_subnetwork.this[local.replica_region].id
+  address_type = "INTERNAL"
+}
+
+resource "google_compute_forwarding_rule" "db_copy" {
+  count                   = length(google_sql_database_instance.replica)
+  name                    = "${var.name}-db-copy"
+  region                  = local.replica_region
+  network                 = google_compute_network.this.id
+  ip_address              = google_compute_address.db_copy[0].id
+  load_balancing_scheme   = ""
+  target                  = google_sql_database_instance.replica[0].psc_service_attachment_link
+  allow_psc_global_access = true
+}
+
+output "db_failover" {
+  value = length(google_sql_database_instance.replica) == 0 ? null : {
+    replica = google_sql_database_instance.replica[0].name
+    address = google_compute_address.db_copy[0].address
+    zone    = google_dns_managed_zone.db.name
+    record  = google_dns_record_set.db.name
+    gateway = var.project
+    regions = keys(var.regions)
+    service = "${var.name}-gateway"
+  }
+}
