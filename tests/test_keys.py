@@ -123,7 +123,7 @@ class KeysTest(unittest.TestCase):
         self.assertEqual(a.created, [("orders~sorter", "sorter@p.iam.gserviceaccount.com", 2)])
         self.assertEqual(a.deleted, ["orders~old"])
         self.assertEqual(sorted(a.blocked), [("t-p", False), ("t-r", True)])  # paused starts again, runaway stops
-        self.assertEqual(json.loads(stored["gw/agents"]), {"sorter@p.iam.gserviceaccount.com": {"key": "sk-agent-sorter", "team": "orders", "agent": "sorter"}})
+        self.assertEqual(json.loads(stored["gw/agents"]), {"sorter@p.iam.gserviceaccount.com": {"key": "sk-agent-sorter", "team": "orders", "agent": "sorter", "calls_per_task": None}})
         self.assertNotIn("sk-agent", out.getvalue())
 
     def test_tool_servers_for_the_team_and_each_agent(self):

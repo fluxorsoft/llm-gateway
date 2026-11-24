@@ -75,12 +75,12 @@ jobs:
         run: |
           cd gateways/litellm/gateway/tests/integration
           python3 fake_google.py > /dev/null 2>&1 &
-          python3 -m pip install -q mcp==1.21.0 pydantic==2.11.9
-          python3 mcp_server.py > /dev/null 2>&1 &
+          docker run -d --name tools --network host -v "$PWD/mcp_server.py:/s.py:ro" python:3.12-slim             sh -c "pip install -q mcp==1.21.0 pydantic==2.11.9 && python /s.py"
           docker run -d --name gateway --network host -v "$PWD/config.yaml:/etc/litellm/config.yaml:ro" \
             -e ARMOR_ENDPOINT=http://127.0.0.1:9100 -e GCE_METADATA_HOST=127.0.0.1:9100 -e GCE_METADATA_IP=127.0.0.1:9100 \
             -e LITELLM_MASTER_KEY=sk-test             -e MCP_ON=1 -e CHECK_TOOL_TRAFFIC=1 -e ARMOR_PROJECT=example-project -e ARMOR_LOCATION=europe-west1 -e ARMOR_TEMPLATE=t -e ARMOR_ENDPOINT=http://127.0.0.1:9100 -e GATEWAY_SETTINGS='{"litellm_settings": {"request_timeout": 600}}' gateway:test
           docker run -d --name developer --network host -v "$PWD/config.yaml:/etc/litellm/config.yaml:ro"             -e ARMOR_ENDPOINT=http://127.0.0.1:9100 -e GCE_METADATA_HOST=127.0.0.1:9100 -e GCE_METADATA_IP=127.0.0.1:9100             -e LITELLM_MASTER_KEY=sk-test -e GATEWAY_ROLE=developer gateway:test             --config /etc/litellm/config.yaml --port 8081 --num_workers 1
+          for i in $(seq 1 90); do curl -s -o /dev/null http://127.0.0.1:8765/mcp && break; sleep 2; done
           for p in 8080 8081; do
             for i in $(seq 1 60); do curl -sf http://127.0.0.1:$p/health/liveliness > /dev/null && break; sleep 2; done
             curl -sf http://127.0.0.1:$p/health/liveliness > /dev/null || { docker logs gateway | tail -30; docker logs developer | tail -30; exit 1; }
