@@ -118,7 +118,7 @@ resource "google_compute_url_map" "this" {
       }
     }
     path_rule {
-      paths   = ["/v1/chat/completions", "/v1/embeddings", "/v1/models"]
+      paths   = ["/v1/chat/completions", "/v1/embeddings", "/v1/models", "/mcp", "/mcp/"] # /mcp: tool servers (the filter refuses it unless tool_servers are set)
       service = google_compute_backend_service.gateway.id
     }
   }
