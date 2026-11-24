@@ -42,5 +42,17 @@ class TemplatesTest(unittest.TestCase):
         self.assertEqual(wrong, [])
 
 
+class ProviderToolsTest(unittest.TestCase):
+    def test_a_team_not_allowed_the_tool_is_refused(self):
+        armor.PROVIDER_TOOLS = {"eng": ["google_search"]}
+        p = Probe()
+        p.should_run_guardrail = lambda **k: True
+        data = {"metadata": {"user_api_key_team_alias": "orders"}, "messages": [{"role": "user", "content": "x"}], "tools": [{"googleSearch": {}}]}
+        with self.assertRaises(Exception) as e:
+            asyncio.run(p.async_pre_call_hook(None, None, data, "completion"))
+        self.assertIn("not allowed for this team", str(e.exception.detail if hasattr(e.exception, "detail") else e.exception))
+        armor.PROVIDER_TOOLS = {}
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -18,3 +18,4 @@ capture: {days: 30, readers: ["group:eng-leads@example.com"]}
 tool_servers: {files: [read, list]}
 agents:
   - {name: triage, identity: triage@eng-project.iam.gserviceaccount.com, daily_usd: 3, rpm: 30, tools: {files: [read]}}
+provider_tools: [google_search]

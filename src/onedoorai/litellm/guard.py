@@ -105,6 +105,17 @@ def developer_shape(data):
     return None
 
 
+# provider tools act outside the network: refused, unless the platform allows one to some team (PROVIDER_TOOLS); then the
+# guardrail, which knows the caller's team, refuses it for every other team
+PROVIDER_FORMS = {"googleSearch": "google_search", "google_search": "google_search", "urlContext": "url_context",
+                  "url_context": "url_context", "codeExecution": "code_execution", "code_execution": "code_execution"}
+
+
+def provider_tool(t):
+    """The provider tool's name for a tools entry like {"googleSearch": {}}, or None."""
+    return PROVIDER_FORMS[next(iter(t))] if isinstance(t, dict) and len(t) == 1 and next(iter(t)) in PROVIDER_FORMS else None
+
+
 def shape(data):
     """What is wrong with the values of a request whose fields are allowed, or None."""
     messages = data.get("messages")
@@ -122,10 +133,11 @@ def shape(data):
             if calls is not None and not (isinstance(calls, list) and all(function_call(c) for c in calls)):
                 return "tool_calls are function calls"
     tools = data.get("tools")
+    allowed = set().union(*json.loads(os.environ.get("PROVIDER_TOOLS") or "{}").values()) if os.environ.get("PROVIDER_TOOLS") else set()
     if tools is not None and not (isinstance(tools, list) and all(
-            only(t, "type", "function") and t.get("type") == "function"
-            and only(t.get("function"), "name", "description", "parameters", "strict")
-            and isinstance(t["function"].get("name"), str) for t in tools)):
+            (only(t, "type", "function") and t.get("type") == "function"
+             and only(t.get("function"), "name", "description", "parameters", "strict")
+             and isinstance(t["function"].get("name"), str)) or provider_tool(t) in allowed for t in tools)):
         return "tools are the app's own functions"
     choice = data.get("tool_choice")
     if not (choice in (None, "none", "auto", "required") if not isinstance(choice, dict) else

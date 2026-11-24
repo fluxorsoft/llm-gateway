@@ -56,6 +56,9 @@ locals {
   team_servers     = { for t, v in local.whole : t => try(v.tool_servers, {}) }
   agent_identities = flatten([for t, gs in local.agents : [for g in gs : g.identity]])
 
+  # provider tools (they act outside the network): named in the catalogue with a reason, a residency note and a price
+  provider_tools = try(local.catalogue.provider_tools, {})
+
   # Who chooses a key's value: LiteLLM (schema 2 and later), or we do, as 1.0.0 did (schema 1, until switched).
   key_maker = try(local.catalogue.key_maker, local.schema >= 2 ? "litellm" : "terraform")
 
@@ -112,6 +115,9 @@ locals {
     flatten([for n, s in local.servers : "catalogue: tool server '${n}' needs an https:// url inside the network" if !can(regex("^https?://", s.url))]),
     flatten([for t, gs in local.agents : [for g in gs : [for s, tools in g.tools : "${t}: agent '${g.name}' uses tool server '${s}', which the team may not use" if !contains(keys(local.team_servers[t]), s)]]]),
     flatten([for t, gs in local.agents : [for g in gs : [for s, tools in g.tools : [for x in tools : "${t}: agent '${g.name}' uses '${s}/${x}', which the team may not use" if contains(keys(local.team_servers[t]), s) && !contains(local.team_servers[t][s], "*") && !contains(local.team_servers[t][s], x)]]]]),
+    flatten([for t, v in local.whole : [for x in try(v.provider_tools, []) : "${t}: provider tool '${x}' is not in the catalogue" if !contains(keys(local.provider_tools), x)]]),
+    flatten([for n, d in local.provider_tools : "catalogue: provider tool '${n}' is google_search, url_context or code_execution" if !contains(["google_search", "url_context", "code_execution"], n)]),
+    flatten([for n, d in local.provider_tools : "catalogue: provider tool '${n}' needs a reason, a residency note and a price" if !(can(d.reason) && can(d.residency) && can(d.price))]),
     [for p in distinct([for t, v in local.whole : v.project]) : "project '${p}' is used by more than one team" if length([for t, v in local.whole : t if v.project == p]) > 1],
   )
 }
@@ -147,6 +153,8 @@ output "capture" {
 output "tool_servers" {
   value = { for n, s in local.servers : n => { url = s.url, transport = try(s.transport, "http") } if anytrue([for t, ss in local.team_servers : contains(keys(ss), n)]) }
 }
+
+output "team_provider_tools" { value = { for t, v in local.whole : t => v.provider_tools if length(try(v.provider_tools, [])) > 0 } }
 
 output "agents_on" { value = length(local.agent_identities) > 0 }
 

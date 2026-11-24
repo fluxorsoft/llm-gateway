@@ -77,6 +77,7 @@ def incomplete(answer):
 # Safety rules per team: {team: template}; a team not named uses the template in the settings. The template is chosen for
 # each request from the caller's team and held in a per-request value, so concurrent calls never mix.
 TEMPLATES = json.loads(os.environ.get("ARMOR_TEMPLATES") or "{}")
+PROVIDER_TOOLS = json.loads(os.environ.get("PROVIDER_TOOLS") or "{}")  # {team: [google_search, ...]}: allowed by request
 _template = contextvars.ContextVar("armor_template", default=None)
 
 
@@ -133,6 +134,13 @@ class FullArmor(ModelArmorGuardrail):
     async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):
         if self.should_run_guardrail(data=data, event_type=GuardrailEventHooks.pre_call) is not True:
             return data
+        if PROVIDER_TOOLS:  # the filter let provider tools through for some team: only that team may use them
+            from .guard import provider_tool
+
+            asked = {provider_tool(t) for t in data.get("tools") or []} - {None}
+            refused = sorted(asked - set(PROVIDER_TOOLS.get(team_of(data)) or []))
+            if refused:
+                raise HTTPException(400, {"error": "not allowed: the provider's " + ", ".join(refused) + " is not allowed for this team"})
         text = everything(data)
         if not text:
             raise HTTPException(400, {"error": "there is no text to check"})

@@ -137,5 +137,20 @@ class SettingsFromEnvironmentTest(unittest.TestCase):
         self.assertEqual(merged({"a": {"b": 1, "c": 2}, "d": 3}, {"a": {"c": 9}}), {"a": {"b": 1, "c": 9}, "d": 3})
 
 
+class ProviderToolsTest(unittest.TestCase):
+    def test_refused_unless_some_team_may_use_one(self):
+        import os
+        from onedoorai.litellm.guard import shape
+        body = {"model": "m", "messages": [{"role": "user", "content": "x"}], "tools": [{"googleSearch": {}}]}
+        os.environ.pop("PROVIDER_TOOLS", None)
+        self.assertIsNotNone(shape(body))
+        os.environ["PROVIDER_TOOLS"] = '{"eng": ["google_search"]}'
+        try:
+            self.assertIsNone(shape(body))
+            self.assertIsNotNone(shape({**body, "tools": [{"codeExecution": {}}]}))
+        finally:
+            os.environ.pop("PROVIDER_TOOLS")
+
+
 if __name__ == "__main__":
     unittest.main()

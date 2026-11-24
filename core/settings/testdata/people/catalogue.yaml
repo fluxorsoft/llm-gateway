@@ -29,3 +29,5 @@ capture: {approved_teams: [eng], max_days: 90}
 
 tool_servers:
   files: {url: "https://files.internal.example.com/mcp"}
+provider_tools:
+  google_search: {reason: "answers about current events", residency: "Google Search may process the query outside the EU", price: "per grounded prompt, Vertex AI list price"}
