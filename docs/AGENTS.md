@@ -35,8 +35,8 @@ an agent of any team is refused. LiteLLM's paid JWT sign-in is not used. Agents 
 ## A task, and acting for a person
 
 `X-Task-Id: <id>` (up to 64 letters, digits and `. _ : -`) is kept in the usage record, so a task's cost is one line
-(`usage_by_task`). `calls_per_task` counts an agent's calls per task for a day in the region's Redis; the next call gets
-429. `X-Acting-For: <Google ID token of the person>` records the person, only from a signed token.
+(`usage_by_task`). `calls_per_task` counts an agent's model calls and tool calls per task for a day in the region's Redis (a
+tool session's set-up, `initialize` and `tools/list`, is not counted and needs no task); the next call gets 429. `X-Acting-For: <Google ID token of the person>` records the person, only from a signed token.
 
 ## Tool servers (MCP)
 

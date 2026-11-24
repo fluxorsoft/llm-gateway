@@ -93,11 +93,12 @@ class IdentityTest(unittest.TestCase):
             await send({"type": "http.response.start", "status": 200, "headers": []})
             await send({"type": "http.response.body", "body": b"{}"})
 
-        async def call(task):
+        async def call(task, mcp=None):
             sent = []
             headers = [(b"authorization", ("Bearer " + token()).encode())] + ([(b"x-task-id", task.encode())] if task else [])
-            scope = {"type": "http", "method": "POST", "path": "/v1/chat/completions", "query_string": b"", "headers": headers}
-            body = json.dumps({"model": "m", "messages": [{"role": "user", "content": "hi"}]}).encode()
+            scope = {"type": "http", "method": "POST", "path": "/mcp" if mcp else "/v1/chat/completions", "query_string": b"", "headers": headers}
+            body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": mcp, "params": {}} if mcp else
+                              {"model": "m", "messages": [{"role": "user", "content": "hi"}]}).encode()
 
             async def receive():
                 return {"type": "http.request", "body": body, "more_body": False}
@@ -110,6 +111,16 @@ class IdentityTest(unittest.TestCase):
         self.assertEqual([asyncio.run(call("job-1")) for _ in range(4)], [200, 200, 200, 429])
         self.assertEqual(asyncio.run(call("job-2")), 200)  # another task starts again
         self.assertEqual(asyncio.run(call(None)), 400)    # a capped agent must name its task
+        # a tool session's set-up neither counts nor needs a task; a tool call does both
+        import os
+        os.environ["MCP_ON"] = "1"
+        try:
+            self.assertEqual([asyncio.run(call(None, m)) for m in ("initialize", "tools/list", "notifications/initialized")], [200, 200, 200])
+            self.assertEqual(asyncio.run(call(None, "tools/call")), 400)
+            self.assertEqual([asyncio.run(call("job-3", m)) for m in ("initialize", "tools/list", "tools/call", "tools/call", "tools/call", "tools/call")],
+                             [200, 200, 200, 200, 200, 429])
+        finally:
+            del os.environ["MCP_ON"]
         identity._identities = None
 
 

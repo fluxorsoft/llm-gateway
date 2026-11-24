@@ -171,6 +171,7 @@ class Filter:
         headers = [(k, v) for k, v in scope["headers"] if k in keep]
         given = dict(scope["headers"])
         extra = {}  # what the filter itself tells LiteLLM, for the usage record
+        capped = None
 
         # an agent's Google identity in place of a key (onedoorai.litellm.identity)
         auth = given.get(b"authorization", b"").decode(errors="replace")
@@ -187,16 +188,7 @@ class Filter:
                 return await refuse(send, 401, str(e))
             headers = [(k, v) for k, v in headers if k != b"authorization"] + [(b"authorization", ("Bearer " + key).encode())]
             extra["agent"] = who["agent"]
-            cap = who.get("calls_per_task")
-            if cap:  # an agent with a cap must say which task each call belongs to
-                task_id = given.get(b"x-task-id", b"").decode(errors="replace")
-                if not TASK.match(task_id):
-                    return await refuse(send, 400, "not allowed: this agent must send X-Task-Id (1 to 64 letters, digits and . _ : -)")
-                from .tooltraffic import counter
-
-                n = await asyncio.to_thread(counter().add, f"{who['team']}~{who['agent']}:{task_id}")
-                if n > cap:
-                    return await refuse(send, 429, f"this task has made its {cap} calls (calls_per_task)")
+            capped = who if who.get("calls_per_task") else None  # counted once the body says what the call is
             # acting for a person: only from a signed token of that person
             acting = given.get(b"x-acting-for", b"").decode(errors="replace")
             if acting:
@@ -236,6 +228,21 @@ class Filter:
                 return await refuse(send, 400, "not allowed: " + wrong)
             body = json.dumps(data).encode()
             headers += [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
+
+        # calls_per_task counts what costs or acts: model calls and tool calls, not a tool session's set-up (initialize,
+        # tools/list, notifications). An agent with a cap must say which task each of those belongs to.
+        if capped and fields is not None and (fields is not MCP or data.get("method") == "tools/call"):
+            import asyncio
+
+            task_id = given.get(b"x-task-id", b"").decode(errors="replace")
+            if not TASK.match(task_id):
+                return await refuse(send, 400, "not allowed: this agent must send X-Task-Id (1 to 64 letters, digits and . _ : -)")
+            from .tooltraffic import counter
+
+            cap = capped["calls_per_task"]
+            n = await asyncio.to_thread(counter().add, f"{capped['team']}~{capped['agent']}:{task_id}")
+            if n > cap:
+                return await refuse(send, 429, f"this task has made its {cap} calls (calls_per_task)")
 
         # check_tool_traffic: a tool call's words before it goes on, and its answer before it comes back
         if fields is MCP and data.get("method") == "tools/call" and os.environ.get("CHECK_TOOL_TRAFFIC") == "1":
