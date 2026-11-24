@@ -22,6 +22,7 @@ import urllib.request
 
 MANAGED = re.compile(r"^[a-z][a-z0-9-]{1,19}-[0-9]+$")  # team-n
 PERSON = re.compile(r"^[a-z][a-z0-9-]{1,19}\.[a-z0-9-]{1,30}$")  # team.handle: a member's own key
+AGENT = re.compile(r"^[a-z][a-z0-9-]{1,19}~[a-z][a-z0-9-]{1,29}$")  # team~agent: an agent's own key
 # any other key (made by hand, or by an agent's step) is never touched here
 
 
@@ -39,6 +40,13 @@ def plan(wanted, existing):
         steps += [("keep", team, a) for a in sorted(wanted_people & people)]
         steps += [("create", team, a) for a in sorted(wanted_people - people)]
         steps += [("delete", team, a) for a in sorted(people - wanted_people)]
+        agents = {a for a in existing.get(team, {}) if AGENT.match(a) and a.split("~", 1)[0] == team}
+        wanted_agents = {f"{team}~{g['name']}": g for g in w.get("agents") or []}
+        for a in sorted(set(wanted_agents) & agents):
+            blocked, stop = bool(existing[team][a].get("blocked")), bool(wanted_agents[a].get("stopped"))
+            steps.append(("stop" if stop and not blocked else "start" if blocked and not stop else "keep", team, a))
+        steps += [("create", team, a) for a in sorted(set(wanted_agents) - agents)]
+        steps += [("delete", team, a) for a in sorted(agents - set(wanted_agents))]
     return steps
 
 
@@ -94,6 +102,22 @@ class Admin:
     def delete(self, alias):
         self.call("POST", "/key/delete", {"key_aliases": [alias]})
 
+    def block(self, token, blocked=True):
+        self.call("POST", "/key/block" if blocked else "/key/unblock", {"key": token})
+
+    def create_agent(self, team_id, alias, models, days, agent, value=None):
+        body = {"team_id": team_id, "key_alias": alias, "models": models, "duration": f"{days}d",
+                "metadata": {"agent": agent["name"], "identity": agent["identity"]}}
+        if value:
+            body["key"] = value
+        if agent.get("daily_usd"):
+            body.update(max_budget=agent["daily_usd"], budget_duration="1d")
+        if agent.get("rpm"):
+            body["rpm_limit"] = agent["rpm"]
+        if agent.get("mcp"):
+            body["object_permission"] = agent["mcp"]
+        return self.call("POST", "/key/generate", body)["key"]
+
 
 def _metadata_token():
     r = urllib.request.Request("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
@@ -110,11 +134,27 @@ def write_secret(project, value, secret="llm-gateway-key", token=_metadata_token
     return json.load(urllib.request.urlopen(r, timeout=30))["name"].rsplit("/", 1)[-1]
 
 
-def run(wanted, admin, write=write_secret, apply=False, say=print):
+def read_secret(project, secret, token=_metadata_token):
+    """The newest version of a secret, or None when it has none yet."""
+    r = urllib.request.Request(f"https://secretmanager.googleapis.com/v1/projects/{project}/secrets/{secret}/versions/latest:access",
+                               headers={"Authorization": "Bearer " + token()})
+    try:
+        return base64.b64decode(json.load(urllib.request.urlopen(r, timeout=30))["payload"]["data"]).decode()
+    except urllib.error.HTTPError as e:
+        if e.code in (400, 404):  # no version yet
+            return None
+        raise
+
+
+def run(wanted, admin, write=write_secret, apply=False, say=print, agents_secret=None, read=read_secret):
     """Returns how many steps change something. Each step is reported as one JSON line, without any key's value."""
     teams = admin.teams()
     existing = {t: admin.keys(teams[t]["team_id"]) for t in wanted if t in teams}
     changes = 0
+    # the agents' map: identity -> {key, team, agent}; the gateway reads it to accept an agent's Google identity
+    project, secret = (agents_secret or "/").split("/", 1)
+    agent_map = json.loads(read(project, secret) or "{}") if agents_secret and apply else {}
+    map_changed = False
     for action, team, alias in plan(wanted, existing):
         w, line = wanted[team], {"message": "keys", "team": team, "alias": alias, "action": action}
         if action != "keep":
@@ -125,6 +165,16 @@ def run(wanted, admin, write=write_secret, apply=False, say=print):
             line["action"] = "would " + action
         elif team not in teams:
             line["action"], line["why"] = "skipped", "the team is not in LiteLLM yet"
+        elif action in ("stop", "start"):
+            admin.block(existing[team][alias]["token"], action == "stop")
+        elif action == "create" and AGENT.match(alias):
+            agent = next(g for g in w["agents"] if f"{team}~{g['name']}" == alias)
+            value = "sk-" + secrets.token_urlsafe(36) if w.get("maker", "litellm") == "terraform" else None
+            made = admin.create_agent(teams[team]["team_id"], alias, teams[team].get("models") or w.get("models") or [], w["days"], agent, value)
+            if agent.get("stopped"):
+                admin.block(admin.keys(teams[team]["team_id"])[alias]["token"])
+            agent_map[agent["identity"]] = {"key": made, "team": team, "agent": agent["name"]}
+            map_changed = True
         elif action == "create":
             value = "sk-" + secrets.token_urlsafe(36) if w.get("maker", "litellm") == "terraform" else None
             person = next((m for m in w.get("members") or [] if f"{team}.{m['handle']}" == alias), None)
@@ -142,7 +192,13 @@ def run(wanted, admin, write=write_secret, apply=False, say=print):
                 line["action"], line["why"] = "create failed: the secret could not be written, the key was deleted", type(e).__name__
         elif action == "delete":
             admin.delete(alias)
+            if AGENT.match(alias):
+                agent_map = {i: v for i, v in agent_map.items() if f"{v['team']}~{v['agent']}" != alias}
+                map_changed = True
         say(json.dumps(line), flush=True)
+    if apply and agents_secret and map_changed:
+        version = write(project, json.dumps(agent_map), secret)
+        say(json.dumps({"message": "keys", "action": "agents map written", "agents": len(agent_map), "secret_version": version}), flush=True)
     return changes
 
 
@@ -181,7 +237,7 @@ def main(argv=None):
             return 3
         print(json.dumps({"message": "keys", "action": "probe passed"}), flush=True)
         return 0
-    changes = run(wanted, admin, apply=a.apply)
+    changes = run(wanted, admin, apply=a.apply, agents_secret=os.environ.get("AGENTS_SECRET"))
     return 2 if changes and not a.apply else 0
 
 

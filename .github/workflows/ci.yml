@@ -91,6 +91,9 @@ jobs:
       - name: Keeping the words, for listed teams only
         run: |
           docker run --rm -e CAPTURE_TEAMS='["eng"]' -v "$PWD/gateways/litellm/gateway/tests/integration:/w"             --entrypoint /app/.venv/bin/python gateway:test /w/test_capture.py
+      - name: Agents' Google identities
+        run: |
+          docker run --rm -e PYTHONPATH=/w/src -v "$PWD:/w" --entrypoint /app/.venv/bin/python gateway:test             /w/gateways/litellm/gateway/tests/integration/test_identity.py
       - name: The developers' door
         run: GATEWAY=http://127.0.0.1:8080 DEVELOPER=http://127.0.0.1:8081 GOOGLE=http://127.0.0.1:9100 python3 gateways/litellm/gateway/tests/integration/test_developer_door.py
       - name: What the gateway said

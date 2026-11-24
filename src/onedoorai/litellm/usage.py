@@ -23,6 +23,8 @@ def record(kwargs, ok):
         "gateway": "litellm",
         "door": os.environ.get("GATEWAY_DOOR", "apps"),
         "task": (meta.get("requester_metadata") or {}).get("task"),
+        "agent": (meta.get("requester_metadata") or {}).get("agent"),
+        "acting_for": (meta.get("requester_metadata") or {}).get("acting_for"),
         "call_id": p.get("id"),
         "ok": ok,
         "team": meta.get("user_api_key_team_alias"),

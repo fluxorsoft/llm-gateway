@@ -37,7 +37,7 @@ locals {
     length(module.settings.capture) == 0 ? {} : { litellm_settings = { callbacks = ["usage.usage", "capture.capture"] } },
   )
   environment = {
-    for k, s in local.services : k => merge(length(local.gateway_settings) == 0 ? {} : { GATEWAY_SETTINGS = jsonencode(local.gateway_settings) }, s.role == "developer" ? { GATEWAY_DOOR = "developers" } : {}, length(module.settings.capture) == 0 ? {} : { CAPTURE_TEAMS = jsonencode(keys(module.settings.capture)) }, length(module.settings.team_safety) == 0 ? {} : { ARMOR_TEMPLATES = jsonencode({ for t, n in module.settings.team_safety : t => "${var.name}-${n}" }) }, {
+    for k, s in local.services : k => merge(length(local.gateway_settings) == 0 ? {} : { GATEWAY_SETTINGS = jsonencode(local.gateway_settings) }, s.role == "developer" ? { GATEWAY_DOOR = "developers" } : {}, module.settings.agents_on && s.role != "admin" ? { AGENTS_SECRET = "${var.project}/${var.name}-agents", GATEWAY_AUDIENCE = s.role == "developer" ? "https://${local.door_domain}" : "https://${var.domain}" } : {}, length(module.settings.capture) == 0 ? {} : { CAPTURE_TEAMS = jsonencode(keys(module.settings.capture)) }, length(module.settings.team_safety) == 0 ? {} : { ARMOR_TEMPLATES = jsonencode({ for t, n in module.settings.team_safety : t => "${var.name}-${n}" }) }, {
       GATEWAY_ROLE                                                                                        = s.role
       ARMOR_PROJECT                                                                                       = var.project
       ARMOR_TEMPLATE                                                                                      = google_model_armor_template.this[s.region].template_id
@@ -378,6 +378,13 @@ resource "google_cloud_run_v2_job" "runner" {
         }
       }
       containers {
+        dynamic "env" {
+          for_each = module.settings.agents_on ? { AGENTS_SECRET = "${var.project}/${var.name}-agents" } : {}
+          content {
+            name  = env.key
+            value = env.value
+          }
+        }
         image = var.images.runner
         resources {
           limits = { cpu = "1", memory = "2Gi" }
@@ -625,4 +632,31 @@ resource "google_cloud_scheduler_job" "audit" {
     }
   }
   depends_on = [google_cloud_run_v2_job_iam_member.audit]
+}
+
+# ---- agents: their keys, by identity, in a secret only the gateways read and only the runner writes ---------------------
+resource "google_secret_manager_secret" "agents" {
+  count     = module.settings.agents_on ? 1 : 0
+  secret_id = "${var.name}-agents"
+  replication {
+    user_managed {
+      dynamic "replicas" {
+        for_each = var.regions
+        content {
+          location = replicas.key
+        }
+      }
+    }
+  }
+}
+
+resource "google_secret_manager_secret_iam_member" "agents" {
+  for_each = module.settings.agents_on ? {
+    gateway = { role = "roles/secretmanager.secretAccessor", member = google_service_account.gateway.email }
+    reader  = { role = "roles/secretmanager.secretAccessor", member = google_service_account.runner.email }
+    writer  = { role = "roles/secretmanager.secretVersionAdder", member = google_service_account.runner.email }
+  } : {}
+  secret_id = google_secret_manager_secret.agents[0].id
+  role      = each.value.role
+  member    = "serviceAccount:${each.value.member}"
 }

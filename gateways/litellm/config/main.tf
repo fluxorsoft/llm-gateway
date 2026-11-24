@@ -106,6 +106,7 @@ output "keys" {
     models  = local.names[t]
     maker   = module.settings.key_maker
     members = v.members
+    agents  = v.agents
   } }
 }
 

@@ -24,6 +24,13 @@ class FakeAdmin:
         self.created.append((alias, models, days, value) if user_id is None else (alias, user_id, daily_usd))
         return value or "sk-made-by-litellm"
 
+    def create_agent(self, team_id, alias, models, days, agent, value=None):
+        self.created.append((alias, agent["identity"], agent.get("daily_usd")))
+        return "sk-agent-" + agent["name"]
+
+    def block(self, token, blocked=True):
+        self.blocked = getattr(self, "blocked", []) + [(token, blocked)]
+
     def ensure_member(self, team_id, user_id):
         self.members = getattr(self, "members", []) + [(team_id, user_id)]
 
@@ -92,6 +99,23 @@ class KeysTest(unittest.TestCase):
         self.assertEqual(a.members, [("id-orders", "ann.lee@example.com")])
         self.assertEqual(written, [("orders-project", "llm-key-ann-lee")])
         self.assertEqual(a.deleted, ["orders.gone"])  # no longer a member
+
+    def test_agents_get_keys_a_map_and_a_stop_switch(self):
+        a = FakeAdmin({"orders": {"orders~old": {"token": "t-old"}, "orders~paused": {"token": "t-p", "blocked": True},
+                                  "orders~runaway": {"token": "t-r"}}})
+        w = wanted(orders=([], None))
+        w["orders"]["agents"] = [{"name": "sorter", "identity": "sorter@p.iam.gserviceaccount.com", "daily_usd": 2},
+                                 {"name": "paused", "identity": "paused@p.iam.gserviceaccount.com"},
+                                 {"name": "runaway", "identity": "runaway@p.iam.gserviceaccount.com", "stopped": True}]
+        stored = {"gw/agents": json.dumps({"old@p.iam.gserviceaccount.com": {"key": "k", "team": "orders", "agent": "old"}})}
+        out = io.StringIO()
+        keys.run(w, a, apply=True, agents_secret="gw/agents", say=lambda s, flush=False: out.write(s + "\n"),
+                 read=lambda p, s: stored.get(f"{p}/{s}"), write=lambda p, v, s="": stored.__setitem__(f"{p}/{s}", v) or "3")
+        self.assertEqual(a.created, [("orders~sorter", "sorter@p.iam.gserviceaccount.com", 2)])
+        self.assertEqual(a.deleted, ["orders~old"])
+        self.assertEqual(sorted(a.blocked), [("t-p", False), ("t-r", True)])  # paused starts again, runaway stops
+        self.assertEqual(json.loads(stored["gw/agents"]), {"sorter@p.iam.gserviceaccount.com": {"key": "sk-agent-sorter", "team": "orders", "agent": "sorter"}})
+        self.assertNotIn("sk-agent", out.getvalue())
 
     def test_the_probe_says_whether_chosen_values_are_still_accepted(self):
         class Refusing(FakeAdmin):

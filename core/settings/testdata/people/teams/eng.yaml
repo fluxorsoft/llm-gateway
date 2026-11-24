@@ -15,3 +15,5 @@ safety: strict
 developer_tools: [gemini-cli, codex]
 tool_models: {gemini-3.8-flash: code, gemini-3.5-flash: code}
 capture: {days: 30, readers: ["group:eng-leads@example.com"]}
+agents:
+  - {name: triage, identity: triage@eng-project.iam.gserviceaccount.com, daily_usd: 3, rpm: 30}

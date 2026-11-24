@@ -41,6 +41,17 @@ locals {
   capture_ok   = try(local.catalogue.capture.approved_teams, [])
   capture_days = try(local.catalogue.capture.max_days, 90)
 
+  # agents: a named entry with its own Google identity, budget and limits; stopped blocks its key at once
+  agents = { for t, v in local.whole : t => [for g in try(v.agents, []) : {
+    name      = try(g.name, "")
+    identity  = try(g.identity, "")
+    owner     = try(g.owner, v.owner)
+    daily_usd = try(g.daily_usd, null)
+    rpm       = try(g.rpm, null)
+    stopped   = try(g.stopped, false)
+  }] }
+  agent_identities = flatten([for t, gs in local.agents : [for g in gs : g.identity]])
+
   # Who chooses a key's value: LiteLLM (schema 2 and later), or we do, as 1.0.0 did (schema 1, until switched).
   key_maker = try(local.catalogue.key_maker, local.schema >= 2 ? "litellm" : "terraform")
 
@@ -89,12 +100,16 @@ locals {
     [for t, v in local.whole : "${t}: keeping words needs the team in the catalogue's capture.approved_teams" if try(v.capture, null) != null && !contains(local.capture_ok, t)],
     [for t, v in local.whole : "${t}: capture.days must be 1 to ${local.capture_days}" if try(v.capture, null) != null && !try(v.capture.days >= 1 && v.capture.days <= local.capture_days, false)],
     flatten([for t, v in local.whole : [for r in try(v.capture.readers, []) : "${t}: a capture reader is user:, group: or serviceAccount:, not '${r}'" if !can(regex("^(user|group|serviceAccount):", r))]]),
+    flatten([for t, gs in local.agents : [for g in gs : "${t}: an agent's name is 2 to 30 lower-case letters, digits and hyphens, not '${g.name}'" if !can(regex("^[a-z][a-z0-9-]{1,29}$", g.name))]]),
+    flatten([for t, gs in local.agents : [for g in gs : "${t}: agent '${g.name}' needs its own service account as identity, not '${g.identity}'" if !can(regex("^[a-z0-9-]+@[a-z0-9-]+\\.iam\\.gserviceaccount\\.com$", g.identity))]]),
+    [for i in distinct(local.agent_identities) : "identity '${i}' is used by more than one agent" if length([for x in local.agent_identities : x if x == i]) > 1],
+    flatten([for t, gs in local.agents : [for g in gs : "${t}: agent '${g.name}' daily_usd must be above 0 and at most the team's budget" if g.daily_usd != null && !try(g.daily_usd > 0 && g.daily_usd <= local.whole[t].budget_monthly_usd, false)]]),
     [for p in distinct([for t, v in local.whole : v.project]) : "project '${p}' is used by more than one team" if length([for t, v in local.whole : t if v.project == p]) > 1],
   )
 }
 
 output "teams" {
-  value = { for t, v in local.whole : t => merge(v, { cloud = try(v.cloud, "gcp"), members = local.members[t] }) }
+  value = { for t, v in local.whole : t => merge(v, { cloud = try(v.cloud, "gcp"), members = local.members[t], agents = local.agents[t] }) }
   precondition {
     condition     = length(local.errors) == 0
     error_message = "The settings break these rules:\n- ${join("\n- ", local.errors)}"
@@ -119,6 +134,8 @@ output "safety" {
 output "capture" {
   value = { for t, v in local.whole : t => { days = v.capture.days, readers = try(v.capture.readers, []) } if try(v.capture, null) != null && contains(local.capture_ok, t) }
 }
+
+output "agents_on" { value = length(local.agent_identities) > 0 }
 
 output "team_safety" { value = { for t, v in local.whole : t => v.safety if try(v.safety, null) != null } }
 

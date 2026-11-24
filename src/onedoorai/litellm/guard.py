@@ -30,6 +30,7 @@ PATHS = {("POST", "/v1/chat/completions"): CHAT,
 
 KEEP_HEADERS = {b"authorization", b"accept", b"host", b"user-agent", b"x-request-id", b"traceparent",
                 b"x-cloud-trace-context"}
+TASK = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")  # X-Task-Id: one id across an agent's calls, kept in the usage record
 
 # ---- the developers' door (GATEWAY_ROLE=developer): what coding tools send, recorded from Codex CLI and Gemini CLI --------
 RESPONSES = {"model", "input", "instructions", "stream", "tools", "tool_choice", "parallel_tool_calls", "reasoning",
@@ -151,6 +152,36 @@ class Filter:
             return await refuse(send, 415, "compressed bodies are not allowed")
         keep = DEVELOPER_HEADERS if role == "developer" else KEEP_HEADERS
         headers = [(k, v) for k, v in scope["headers"] if k in keep]
+        given = dict(scope["headers"])
+        extra = {}  # what the filter itself tells LiteLLM, for the usage record
+
+        # an agent's Google identity in place of a key (onedoorai.litellm.identity)
+        auth = given.get(b"authorization", b"").decode(errors="replace")
+        from .identity import identities, looks_like_jwt
+        ids = identities()
+        if auth.startswith("Bearer ") and looks_like_jwt(auth[7:]):
+            if ids is None:
+                return await refuse(send, 401, "identity tokens are not accepted here")
+            try:
+                import asyncio
+
+                key, who = await asyncio.to_thread(ids.key_for, auth[7:])
+            except ValueError as e:
+                return await refuse(send, 401, str(e))
+            headers = [(k, v) for k, v in headers if k != b"authorization"] + [(b"authorization", ("Bearer " + key).encode())]
+            extra["agent"] = who["agent"]
+            # acting for a person: only from a signed token of that person
+            acting = given.get(b"x-acting-for", b"").decode(errors="replace")
+            if acting:
+                try:
+                    extra["acting_for"] = (await asyncio.to_thread(ids.verify, acting))["email"]
+                except ValueError as e:
+                    return await refuse(send, 401, "x-acting-for: " + str(e))
+        task = given.get(b"x-task-id", b"").decode(errors="replace")
+        if task:
+            if not TASK.match(task):
+                return await refuse(send, 400, "not allowed: X-Task-Id is 1 to 64 letters, digits and . _ : -")
+            extra["task"] = task
 
         body = b""
         if fields is not None:
@@ -175,6 +206,8 @@ class Filter:
             wrong = developer_shape(data) if role == "developer" and fields is not CHAT and fields is not EMBEDDINGS else shape(data)
             if wrong:
                 return await refuse(send, 400, "not allowed: " + wrong)
+            if extra and fields in (CHAT, EMBEDDINGS):
+                data["metadata"] = extra  # read by the usage record; callers may not send metadata themselves
             body = json.dumps(data).encode()
             headers += [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
 
