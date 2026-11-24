@@ -44,7 +44,8 @@ missing or edited day shows. `lock = true` locks the policy for good: nobody can
 ## A data perimeter (`vpc_sc`)
 
 A VPC Service Controls perimeter around the gateway project and every team project. It needs an organisation and its
-access policy (`policy = "accessPolicies/<number>"`). Start with `enforce = false`: violations are logged and nothing is
+access policy (`policy = "accessPolicies/<number>"`). Run the bootstrap again with `VPC_SC_POLICY=accessPolicies/<number>`: the deployer may then edit
+perimeters in that policy, and nowhere else. Start with `enforce = false`: violations are logged and nothing is
 blocked. Read them in Logging (`protoPayload.metadata.dryRun=true`), add the identities that must still come in (the
 GitHub deployer, for example) under `identities`, then set `enforce = true`.
 

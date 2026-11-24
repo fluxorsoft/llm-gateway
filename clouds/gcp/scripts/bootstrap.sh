@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Once per gateway project, by someone who owns it and the team projects: APIs, the Terraform state bucket, the image
 # repository, and a keyless identity for GitHub Actions that only this repository's "gateway" environment can use.
-#   PROJECT=... TEAM_PROJECTS="a b" GITHUB_REPO=owner/repo REGION=europe-west2 [CMEK=1] clouds/gcp/scripts/bootstrap.sh
+#   PROJECT=... TEAM_PROJECTS="a b" GITHUB_REPO=owner/repo REGION=europe-west2 [CMEK=1] [VPC_SC_POLICY=accessPolicies/N] \n#     clouds/gcp/scripts/bootstrap.sh
 set -euo pipefail
 : "${PROJECT:?}" "${TEAM_PROJECTS:?}" "${GITHUB_REPO:?}" "${REGION:=europe-west2}" "${NAME:=llmgw}" "${REPO_LOCATION:=europe}"
 : "${GITHUB_ENVIRONMENT=gateway}" # set it empty for none (private repositories on GitHub Free have no environments)
@@ -59,6 +59,9 @@ for p in $TEAM_PROJECTS; do
     bind "$p" "$r"
   done
 done
+if [ -n "${VPC_SC_POLICY:-}" ]; then  # the data perimeter (vpc_sc): the deployer edits perimeters in that policy only
+  gcloud access-context-manager policies add-iam-policy-binding "${VPC_SC_POLICY#accessPolicies/}" --quiet     --member="serviceAccount:$deployer" --role=roles/accesscontextmanager.policyEditor --format=none
+fi
 echo
 if [ -n "$GITHUB_ENVIRONMENT" ]; then echo "Set these as variables of the repository's '$GITHUB_ENVIRONMENT' environment:"; else echo "Set these as variables of the repository:"; fi
 echo "  GCP_PROJECT=$PROJECT"
