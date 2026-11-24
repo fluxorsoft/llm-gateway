@@ -12,6 +12,18 @@ import urllib.request
 from .key import main as _key  # noqa: F401  (the same rules)
 
 
+def line(info):
+    """One line about a key: what it spent, its limit and when the limit resets."""
+    limit, every = info.get("max_budget"), info.get("budget_duration")
+    out = f"{info.get('key_alias')}: spent {info.get('spend') or 0:.4f} USD"
+    if limit:
+        out += f" of {limit:.2f}" if limit >= 0.01 else f" of {limit:g}"
+        out += f" a {'day' if every == '1d' else every}" if every else ""
+    if info.get("budget_reset_at"):
+        out += f"; resets {info['budget_reset_at']}"
+    return out
+
+
 def main(argv=None):
     import argparse
     import contextlib
@@ -26,10 +38,7 @@ def main(argv=None):
         _key(["--project", a.project])
     r = urllib.request.Request(a.door.rstrip("/") + "/key/info", headers={"Authorization": "Bearer " + out.getvalue().strip()})
     info = json.load(urllib.request.urlopen(r, timeout=30, context=ssl.create_default_context(cafile=a.ca)))["info"]
-    limit = info.get("max_budget")
-    print(f"{info.get('key_alias')}: spent {info.get('spend') or 0:.4f} USD"
-          + (f" of {limit:.2f} a {'day' if info.get('budget_duration') == '1d' else info.get('budget_duration')}" if limit else "")
-          + (f"; resets {info.get('budget_reset_at')}" if info.get("budget_reset_at") else ""))
+    print(line(info))
     return 0
 
 
