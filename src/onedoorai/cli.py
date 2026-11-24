@@ -12,6 +12,7 @@ def main(argv=None):
     a = sub.add_parser("admin", help="open a local door to the gateway's admin service (adds your Google identity)")
     a.add_argument("--url", help="the admin service's address (default: ADMIN_URL)")
     a.add_argument("--port", type=int, help="local port (default 9000)")
+    sub.add_parser("spend", help="your own spend and daily limit on the developers' door", add_help=False)
     sub.add_parser("key", help="print your own key for the developers' door, using your Google sign-in", add_help=False)
     sub.add_parser("rotate", help="propose the next key-rotation step as edits to the team files", add_help=False)
     sub.add_parser("pricecheck", help="the gateway's cost figures against Google's bill (run by the runner)", add_help=False)
@@ -19,6 +20,9 @@ def main(argv=None):
     sub.add_parser("keys", help="make, keep and delete team keys (run by the runner)", add_help=False)
     if argv is None:
         argv = sys.argv[1:]
+    if argv[:1] == ["spend"]:
+        from .spend import main as spend
+        return spend(argv[1:])
     if argv[:1] == ["key"]:
         from .key import main as key
         return key(argv[1:])

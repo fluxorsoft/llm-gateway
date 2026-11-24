@@ -35,7 +35,8 @@ KEEP_HEADERS = {b"authorization", b"accept", b"host", b"user-agent", b"x-request
 RESPONSES = {"model", "input", "instructions", "stream", "tools", "tool_choice", "parallel_tool_calls", "reasoning",
              "include", "store", "prompt_cache_key", "client_metadata", "temperature", "top_p", "max_output_tokens", "text"}
 GEMINI = {"contents", "generationConfig", "systemInstruction", "tools", "toolConfig"}
-DEVELOPER_PATHS = {**PATHS, ("POST", "/v1/responses"): RESPONSES}
+DEVELOPER_PATHS = {**PATHS, ("POST", "/v1/responses"): RESPONSES,
+                   ("GET", "/key/info"): None}  # a person's own key: spend and limit (LiteLLM refuses anyone else's)
 GEMINI_PATH = re.compile(r"^/v1beta/models/[A-Za-z0-9.\-]{1,80}:(streamGenerateContent|generateContent)$")
 DEVELOPER_HEADERS = KEEP_HEADERS | {b"x-goog-api-key"}
 

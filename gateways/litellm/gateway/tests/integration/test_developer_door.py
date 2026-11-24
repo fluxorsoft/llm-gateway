@@ -74,6 +74,21 @@ class DeveloperDoorTest(unittest.TestCase):
         s, b = post(GATEWAY, "/v1/chat/completions", body)
         self.assertEqual(s, 400, b)
 
+    def test_a_key_can_read_only_its_own_spend(self):
+        # LiteLLM answers only about the key that asks (proven with a database in the spikes); here: the door lets that one
+        # read through, never with a query (so never about another key), and the apps' door does not have it
+        def get(base, path):
+            try:
+                with urllib.request.urlopen(urllib.request.Request(base + path, headers={"Authorization": "Bearer sk-test"}), timeout=30) as a:
+                    return a.status, a.read().decode()
+            except urllib.error.HTTPError as e:
+                return e.code, e.read().decode()
+        s, b = get(DEVELOPER, "/key/info")
+        self.assertNotIn("gateway_refused", b)  # passed to LiteLLM
+        s, b = get(DEVELOPER, "/key/info?key=sk-other")
+        self.assertEqual((s, "gateway_refused" in b), (400, True))
+        self.assertEqual(get(GATEWAY, "/key/info")[0], 404)
+
     def test_the_apps_door_has_no_developer_paths(self):
         self.assertEqual(post(GATEWAY, "/v1/responses", {"model": "pretend", "input": "hi"})[0], 404)
         self.assertEqual(post(GATEWAY, "/v1beta/models/pretend:generateContent", {"contents": []}, header="x-goog-api-key")[0], 404)

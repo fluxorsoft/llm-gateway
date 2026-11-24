@@ -11,3 +11,4 @@ tool that reads BigQuery, to the views. None of them holds a question or an answ
 | `usage_by_model_place` | team, model, project, location, day: where calls ran and what they cost |
 | `usage_by_task` | team, task, day: the cost of an agent's task (record version 2, when the agent sends a task id) |
 | `failures_by_kind` | team, model, error, day |
+| `usage_by_person_month` | team, person, month: what each member spent on the developers' door (keys named team.person) |
