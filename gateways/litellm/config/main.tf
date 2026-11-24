@@ -108,6 +108,8 @@ output "keys" {
     members = v.members
     agents  = [for g in v.agents : merge(g, { calls_per_task = g.calls })]
     servers = try(v.tool_servers, {})
+    # the tools' names on each person's key too: LiteLLM's Gemini route applies a key's names, not the team's
+    aliases = { for n, a in try(v.tool_models, {}) : n => "${t}-${a}" }
   } }
 }
 

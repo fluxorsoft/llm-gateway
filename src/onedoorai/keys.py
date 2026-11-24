@@ -80,8 +80,10 @@ class Admin:
                 return out
             page += 1
 
-    def create(self, team_id, alias, models, days, value=None, user_id=None, daily_usd=None):
+    def create(self, team_id, alias, models, days, value=None, user_id=None, daily_usd=None, aliases=None):
         body = {"team_id": team_id, "key_alias": alias, "models": models, "duration": f"{days}d"}
+        if aliases:
+            body["aliases"] = aliases
         if value:
             body["key"] = value
         if user_id:
@@ -113,6 +115,9 @@ class Admin:
 
     def set_team_servers(self, team_id, permission):
         self.call("POST", "/team/update", {"team_id": team_id, "object_permission": permission})
+
+    def set_key_aliases(self, token, aliases):
+        self.call("POST", "/key/update", {"key": token, "aliases": aliases})
 
     def set_key_permission(self, token, permission):
         self.call("POST", "/key/update", {"key": token, "object_permission": permission})
@@ -209,6 +214,9 @@ def run(wanted, admin, write=write_secret, apply=False, say=print, agents_secret
                 map_changed = True
             if (existing[team][alias].get("object_permission") or {}).get("mcp_servers", []) != agent["permission"]["mcp_servers"] or agent["permission"].get("mcp_tool_permissions"):
                 admin.set_key_permission(existing[team][alias]["token"], agent["permission"])
+        if action == "keep" and apply and "." in alias and team in teams and                 (existing[team][alias].get("aliases") or {}) != (w.get("aliases") or {}):  # a person's key: the tools' names
+            admin.set_key_aliases(existing[team][alias]["token"], w.get("aliases") or {})
+            line["aliases"] = "updated"
         if action != "keep":
             changes += 1
         if action == "keep":
@@ -233,7 +241,8 @@ def run(wanted, admin, write=write_secret, apply=False, say=print, agents_secret
             models = teams[team].get("models") or w.get("models") or []
             if person:
                 admin.ensure_member(teams[team]["team_id"], person["id"])
-                made = admin.create(teams[team]["team_id"], alias, models, w["days"], value, person["id"], person.get("daily_usd"))
+                made = admin.create(teams[team]["team_id"], alias, models, w["days"], value, person["id"], person.get("daily_usd"),
+                                    w.get("aliases") or None)
             else:
                 made = admin.create(teams[team]["team_id"], alias, models, w["days"], value)
             try:

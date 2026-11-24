@@ -20,8 +20,9 @@ class FakeAdmin:
     def keys(self, team_id):
         return dict(self.existing.get(team_id[3:], {}))
 
-    def create(self, team_id, alias, models, days, value=None, user_id=None, daily_usd=None):
+    def create(self, team_id, alias, models, days, value=None, user_id=None, daily_usd=None, aliases=None):
         self.created.append((alias, models, days, value) if user_id is None else (alias, user_id, daily_usd))
+        self.aliases = getattr(self, "aliases", {}) | ({alias: aliases} if aliases else {})
         return value or "sk-made-by-litellm"
 
     def create_agent(self, team_id, alias, models, days, agent, value=None):
@@ -45,6 +46,9 @@ class FakeAdmin:
 
     def delete(self, alias):
         self.deleted.append(alias)
+
+    def set_key_aliases(self, token, aliases):
+        self.updated_aliases = getattr(self, "updated_aliases", []) + [(token, aliases)]
 
 
 def wanted(**teams):
@@ -115,6 +119,19 @@ class KeysTest(unittest.TestCase):
             keys.urllib.request.urlopen = real
         self.assertEqual(done, ["1"])
         self.assertEqual([c for c in calls if c.endswith(":disable")], ["https://secretmanager.googleapis.com/v1/projects/p/secrets/s/versions/1:disable"])
+
+    def test_a_persons_key_carries_the_tools_names(self):
+        names = {"gemini-3.8-flash": "orders-backup"}
+        w = wanted(orders=([1], None))
+        w["orders"].update(members=[{"id": "ann@example.com", "handle": "ann"}, {"id": "bob@example.com", "handle": "bob"}], aliases=names)
+        a = FakeAdmin({"orders": {"orders-1": {}, "orders.bob": {"token": "t-bob", "aliases": {}}}})
+        _, lines, _ = self.run_keys(a, w)
+        self.assertEqual(a.aliases, {"orders.ann": names})          # a new key gets them
+        self.assertEqual(a.updated_aliases, [("t-bob", names)])     # a key made before gets them too
+        self.assertFalse(hasattr(a, "updated_aliases") and any(t == "orders-1" for t, _ in a.updated_aliases))  # not the team's key
+        a2 = FakeAdmin({"orders": {"orders-1": {}, "orders.ann": {"token": "t", "aliases": names}, "orders.bob": {"token": "t2", "aliases": names}}})
+        self.run_keys(a2, w)
+        self.assertFalse(hasattr(a2, "updated_aliases"))           # nothing when they already match
 
     def test_without_apply_nothing_changes_and_the_difference_is_counted(self):
         a = FakeAdmin({"orders": {"orders-1": {}}})
