@@ -36,6 +36,9 @@ on:
 permissions:
   contents: read
   id-token: write
+defaults:
+  run:
+    shell: bash # -eo pipefail: a failing first command in a pipe fails the step (QA: a failed output once ran no checks)
 concurrency:
   group: gateway
   cancel-in-progress: false
