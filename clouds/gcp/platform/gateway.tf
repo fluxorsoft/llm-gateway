@@ -35,9 +35,11 @@ locals {
   gateway_settings = merge(
     var.spend_log_days == null ? {} : { general_settings = { maximum_spend_logs_retention_period = "${var.spend_log_days}d" } },
     length(module.settings.capture) == 0 ? {} : { litellm_settings = { callbacks = ["usage.usage", "capture.capture"] } },
+    # tool servers: listed here; a key gets none unless granted (the key step grants each agent its own)
+    length(module.settings.tool_servers) == 0 ? {} : { mcp_servers = module.settings.tool_servers, general_settings = merge(var.spend_log_days == null ? {} : { maximum_spend_logs_retention_period = "${var.spend_log_days}d" }, { require_key_mcp_access_defined = true }) },
   )
   environment = {
-    for k, s in local.services : k => merge(length(local.gateway_settings) == 0 ? {} : { GATEWAY_SETTINGS = jsonencode(local.gateway_settings) }, s.role == "developer" ? { GATEWAY_DOOR = "developers" } : {}, module.settings.agents_on && s.role != "admin" ? { AGENTS_SECRET = "${var.project}/${var.name}-agents", GATEWAY_AUDIENCE = s.role == "developer" ? "https://${local.door_domain}" : "https://${var.domain}" } : {}, length(module.settings.capture) == 0 ? {} : { CAPTURE_TEAMS = jsonencode(keys(module.settings.capture)) }, length(module.settings.team_safety) == 0 ? {} : { ARMOR_TEMPLATES = jsonencode({ for t, n in module.settings.team_safety : t => "${var.name}-${n}" }) }, {
+    for k, s in local.services : k => merge(length(local.gateway_settings) == 0 ? {} : { GATEWAY_SETTINGS = jsonencode(local.gateway_settings) }, s.role == "developer" ? { GATEWAY_DOOR = "developers" } : {}, length(module.settings.tool_servers) > 0 && s.role != "admin" ? { MCP_ON = "1" } : {}, module.settings.agents_on && s.role != "admin" ? { AGENTS_SECRET = "${var.project}/${var.name}-agents", GATEWAY_AUDIENCE = s.role == "developer" ? "https://${local.door_domain}" : "https://${var.domain}" } : {}, length(module.settings.capture) == 0 ? {} : { CAPTURE_TEAMS = jsonencode(keys(module.settings.capture)) }, length(module.settings.team_safety) == 0 ? {} : { ARMOR_TEMPLATES = jsonencode({ for t, n in module.settings.team_safety : t => "${var.name}-${n}" }) }, {
       GATEWAY_ROLE                                                                                        = s.role
       ARMOR_PROJECT                                                                                       = var.project
       ARMOR_TEMPLATE                                                                                      = google_model_armor_template.this[s.region].template_id

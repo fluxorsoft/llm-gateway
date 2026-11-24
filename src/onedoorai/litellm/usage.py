@@ -25,6 +25,8 @@ def record(kwargs, ok):
         "task": (meta.get("requester_metadata") or {}).get("task"),
         "agent": (meta.get("requester_metadata") or {}).get("agent"),
         "acting_for": (meta.get("requester_metadata") or {}).get("acting_for"),
+        "tool": (p.get("mcp_tool_call_metadata") or {}).get("name"),
+        "tool_server": (p.get("mcp_tool_call_metadata") or {}).get("mcp_server_name"),
         "call_id": p.get("id"),
         "ok": ok,
         "team": meta.get("user_api_key_team_alias"),

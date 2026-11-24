@@ -29,7 +29,7 @@ PATHS = {("POST", "/v1/chat/completions"): CHAT,
          ("GET", "/health/liveliness"): None}
 
 KEEP_HEADERS = {b"authorization", b"accept", b"host", b"user-agent", b"x-request-id", b"traceparent",
-                b"x-cloud-trace-context"}
+                b"x-cloud-trace-context", b"mcp-protocol-version", b"mcp-session-id"}
 TASK = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")  # X-Task-Id: one id across an agent's calls, kept in the usage record
 
 # ---- the developers' door (GATEWAY_ROLE=developer): what coding tools send, recorded from Codex CLI and Gemini CLI --------
@@ -42,8 +42,13 @@ GEMINI_PATH = re.compile(r"^/v1beta/models/[A-Za-z0-9.\-]{1,80}:(streamGenerateC
 DEVELOPER_HEADERS = KEEP_HEADERS | {b"x-goog-api-key"}
 
 
+MCP = {"jsonrpc", "id", "method", "params"}  # tool servers: JSON-RPC, when the platform lists any (MCP_ON)
+
+
 def route(role, method, path, query):
     """The fields a request may carry, None for no body, or False: not here. And why a query string is refused, if it is."""
+    if os.environ.get("MCP_ON") == "1" and method == "POST" and path in ("/mcp", "/mcp/"):
+        return MCP, ("query parameters are not allowed" if query else None)
     if role != "developer":
         return PATHS.get((method, path), False), ("query parameters are not allowed" if query else None)
     if method == "POST" and GEMINI_PATH.match(path):
@@ -203,7 +208,8 @@ class Filter:
             bad = sorted(set(data) - fields)
             if bad:
                 return await refuse(send, 400, "fields not allowed: " + ", ".join(bad)[:300])
-            wrong = developer_shape(data) if role == "developer" and fields is not CHAT and fields is not EMBEDDINGS else shape(data)
+            wrong = (None if fields is MCP else developer_shape(data) if role == "developer" and fields is not CHAT
+                     and fields is not EMBEDDINGS else shape(data))
             if wrong:
                 return await refuse(send, 400, "not allowed: " + wrong)
             if extra and fields in (CHAT, EMBEDDINGS):

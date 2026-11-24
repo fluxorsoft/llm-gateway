@@ -26,3 +26,6 @@ tools:
 safety:
   strict: {injection: LOW_AND_ABOVE, harmful: LOW_AND_ABOVE, sensitive_data: true}
 capture: {approved_teams: [eng], max_days: 90}
+
+tool_servers:
+  files: {url: "https://files.internal.example.com/mcp"}

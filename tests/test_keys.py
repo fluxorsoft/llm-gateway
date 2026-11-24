@@ -28,6 +28,15 @@ class FakeAdmin:
         self.created.append((alias, agent["identity"], agent.get("daily_usd")))
         return "sk-agent-" + agent["name"]
 
+    def servers(self):
+        return {"files": "id-files"}
+
+    def set_team_servers(self, team_id, permission):
+        self.team_servers = getattr(self, "team_servers", []) + [(team_id, permission)]
+
+    def set_key_permission(self, token, permission):
+        self.key_permissions = getattr(self, "key_permissions", []) + [(token, permission)]
+
     def block(self, token, blocked=True):
         self.blocked = getattr(self, "blocked", []) + [(token, blocked)]
 
@@ -116,6 +125,19 @@ class KeysTest(unittest.TestCase):
         self.assertEqual(sorted(a.blocked), [("t-p", False), ("t-r", True)])  # paused starts again, runaway stops
         self.assertEqual(json.loads(stored["gw/agents"]), {"sorter@p.iam.gserviceaccount.com": {"key": "sk-agent-sorter", "team": "orders", "agent": "sorter"}})
         self.assertNotIn("sk-agent", out.getvalue())
+
+    def test_tool_servers_for_the_team_and_each_agent(self):
+        a = FakeAdmin({"orders": {"orders~reader": {"token": "t-r", "object_permission": {"mcp_servers": []}}}})
+        w = wanted(orders=([], None))
+        w["orders"]["servers"] = {"files": ["read", "list"]}
+        w["orders"]["agents"] = [{"name": "reader", "identity": "r@p.iam.gserviceaccount.com", "tools": {"files": ["read"]}}]
+        self.run_keys(a, w)
+        self.assertEqual(a.team_servers, [("id-orders", {"mcp_servers": ["files"], "mcp_tool_permissions": {"id-files": ["list", "read"]}})])
+        self.assertEqual(a.key_permissions, [("t-r", {"mcp_servers": ["files"], "mcp_tool_permissions": {"id-files": ["read"]}})])
+
+    def test_an_agent_without_tools_gets_none(self):
+        from onedoorai.keys import permission
+        self.assertEqual(permission({"files": ["*"]}, {"files": "x"}), {"mcp_servers": ["files"], "mcp_tool_permissions": {}})
 
     def test_the_probe_says_whether_chosen_values_are_still_accepted(self):
         class Refusing(FakeAdmin):

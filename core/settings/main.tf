@@ -49,7 +49,11 @@ locals {
     daily_usd = try(g.daily_usd, null)
     rpm       = try(g.rpm, null)
     stopped   = try(g.stopped, false)
+    tools     = try(g.tools, {}) # {server: [tool]}: within the team's tool_servers
   }] }
+  # tool servers (MCP): listed in the catalogue, allowed per team with the tools it may call ("*" for all)
+  servers          = try(local.catalogue.tool_servers, {})
+  team_servers     = { for t, v in local.whole : t => try(v.tool_servers, {}) }
   agent_identities = flatten([for t, gs in local.agents : [for g in gs : g.identity]])
 
   # Who chooses a key's value: LiteLLM (schema 2 and later), or we do, as 1.0.0 did (schema 1, until switched).
@@ -104,6 +108,10 @@ locals {
     flatten([for t, gs in local.agents : [for g in gs : "${t}: agent '${g.name}' needs its own service account as identity, not '${g.identity}'" if !can(regex("^[a-z0-9-]+@[a-z0-9-]+\\.iam\\.gserviceaccount\\.com$", g.identity))]]),
     [for i in distinct(local.agent_identities) : "identity '${i}' is used by more than one agent" if length([for x in local.agent_identities : x if x == i]) > 1],
     flatten([for t, gs in local.agents : [for g in gs : "${t}: agent '${g.name}' daily_usd must be above 0 and at most the team's budget" if g.daily_usd != null && !try(g.daily_usd > 0 && g.daily_usd <= local.whole[t].budget_monthly_usd, false)]]),
+    flatten([for t, ss in local.team_servers : [for s, _ in ss : "${t}: tool server '${s}' is not in the catalogue" if !contains(keys(local.servers), s)]]),
+    flatten([for n, s in local.servers : "catalogue: tool server '${n}' needs an https:// url inside the network" if !can(regex("^https?://", s.url))]),
+    flatten([for t, gs in local.agents : [for g in gs : [for s, tools in g.tools : "${t}: agent '${g.name}' uses tool server '${s}', which the team may not use" if !contains(keys(local.team_servers[t]), s)]]]),
+    flatten([for t, gs in local.agents : [for g in gs : [for s, tools in g.tools : [for x in tools : "${t}: agent '${g.name}' uses '${s}/${x}', which the team may not use" if contains(keys(local.team_servers[t]), s) && !contains(local.team_servers[t][s], "*") && !contains(local.team_servers[t][s], x)]]]]),
     [for p in distinct([for t, v in local.whole : v.project]) : "project '${p}' is used by more than one team" if length([for t, v in local.whole : t if v.project == p]) > 1],
   )
 }
@@ -133,6 +141,11 @@ output "safety" {
 
 output "capture" {
   value = { for t, v in local.whole : t => { days = v.capture.days, readers = try(v.capture.readers, []) } if try(v.capture, null) != null && contains(local.capture_ok, t) }
+}
+
+# the tool servers some team uses, for the gateway's config
+output "tool_servers" {
+  value = { for n, s in local.servers : n => { url = s.url, transport = try(s.transport, "http") } if anytrue([for t, ss in local.team_servers : contains(keys(ss), n)]) }
 }
 
 output "agents_on" { value = length(local.agent_identities) > 0 }

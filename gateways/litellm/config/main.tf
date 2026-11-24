@@ -107,6 +107,7 @@ output "keys" {
     maker   = module.settings.key_maker
     members = v.members
     agents  = v.agents
+    servers = try(v.tool_servers, {})
   } }
 }
 

@@ -102,6 +102,20 @@ class Admin:
     def delete(self, alias):
         self.call("POST", "/key/delete", {"key_aliases": [alias]})
 
+    def servers(self):
+        """{name: server_id} of the tool servers LiteLLM knows."""
+        try:
+            got = self.call("GET", "/v1/mcp/server")
+        except RuntimeError:
+            return {}
+        return {s.get("server_name") or s.get("alias"): s["server_id"] for s in (got if isinstance(got, list) else got.get("data", []))}
+
+    def set_team_servers(self, team_id, permission):
+        self.call("POST", "/team/update", {"team_id": team_id, "object_permission": permission})
+
+    def set_key_permission(self, token, permission):
+        self.call("POST", "/key/update", {"key": token, "object_permission": permission})
+
     def block(self, token, blocked=True):
         self.call("POST", "/key/block" if blocked else "/key/unblock", {"key": token})
 
@@ -114,8 +128,8 @@ class Admin:
             body.update(max_budget=agent["daily_usd"], budget_duration="1d")
         if agent.get("rpm"):
             body["rpm_limit"] = agent["rpm"]
-        if agent.get("mcp"):
-            body["object_permission"] = agent["mcp"]
+        if agent.get("permission"):
+            body["object_permission"] = agent["permission"]
         return self.call("POST", "/key/generate", body)["key"]
 
 
@@ -146,6 +160,11 @@ def read_secret(project, secret, token=_metadata_token):
         raise
 
 
+def permission(servers, ids):
+    """LiteLLM's object_permission for {server: [tools]}: the servers, and the tools of each ("*": all of them)."""
+    return {"mcp_servers": sorted(servers), "mcp_tool_permissions": {ids[s]: sorted(t) for s, t in servers.items() if "*" not in t and s in ids}}
+
+
 def run(wanted, admin, write=write_secret, apply=False, say=print, agents_secret=None, read=read_secret):
     """Returns how many steps change something. Each step is reported as one JSON line, without any key's value."""
     teams = admin.teams()
@@ -155,8 +174,18 @@ def run(wanted, admin, write=write_secret, apply=False, say=print, agents_secret
     project, secret = (agents_secret or "/").split("/", 1)
     agent_map = json.loads(read(project, secret) or "{}") if agents_secret and apply else {}
     map_changed = False
+    ids = admin.servers() if any(w.get("servers") for w in wanted.values()) else {}
+    for team, w in sorted(wanted.items()):  # each team's tool servers, every time (it is cheap and keeps LiteLLM in step)
+        if w.get("servers") and team in teams and apply:
+            admin.set_team_servers(teams[team]["team_id"], permission(w["servers"], ids))
+        for g in w.get("agents") or []:
+            g["permission"] = permission(g.get("tools") or {}, ids) if g.get("tools") else {"mcp_servers": []}
     for action, team, alias in plan(wanted, existing):
         w, line = wanted[team], {"message": "keys", "team": team, "alias": alias, "action": action}
+        if action in ("keep", "stop", "start") and AGENT.match(alias) and apply:  # an agent's tools can change
+            agent = next(g for g in w["agents"] if f"{team}~{g['name']}" == alias)
+            if (existing[team][alias].get("object_permission") or {}).get("mcp_servers", []) != agent["permission"]["mcp_servers"] or agent["permission"].get("mcp_tool_permissions"):
+                admin.set_key_permission(existing[team][alias]["token"], agent["permission"])
         if action != "keep":
             changes += 1
         if action == "keep":
