@@ -186,6 +186,17 @@ class KeysTest(unittest.TestCase):
         self.assertEqual(a.team_servers, [("id-orders", {"mcp_servers": ["files"], "mcp_tool_permissions": {"id-files": ["list", "read"]}})])
         self.assertEqual(a.key_permissions, [("t-r", {"mcp_servers": ["files"], "mcp_tool_permissions": {"id-files": ["read"]}})])
 
+    def test_a_teams_own_key_gets_the_teams_tools(self):
+        w = wanted(orders=([5], None))
+        w["orders"]["servers"] = {"files": ["read"]}
+        a = FakeAdmin({"orders": {"orders-5": {"token": "t5"}, "orders.ann": {"token": "ta"}}})
+        _, lines, _ = self.run_keys(a, w)
+        self.assertEqual(a.key_permissions, [("t5", {"mcp_servers": ["files"], "mcp_tool_permissions": {"id-files": ["read"]}})])
+        self.assertIn("tools granted", json.dumps(lines))
+        a2 = FakeAdmin({"orders": {"orders-5": {"token": "t5", "object_permission": {"mcp_servers": ["files"], "mcp_tool_permissions": {"id-files": ["read"]}}}}})
+        self.run_keys(a2, w)
+        self.assertFalse(hasattr(a2, "key_permissions"))   # nothing when it already matches
+
     def test_an_agent_without_tools_gets_none(self):
         from onedoorai.keys import permission
         self.assertEqual(permission({"files": ["*"]}, {"files": "x"}), {"mcp_servers": ["files"], "mcp_tool_permissions": {}})

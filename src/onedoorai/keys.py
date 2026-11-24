@@ -260,6 +260,20 @@ def run(wanted, admin, write=write_secret, apply=False, say=print, agents_secret
                 agent_map = {i: v for i, v in agent_map.items() if f"{v['team']}~{v['agent']}" != alias}
                 map_changed = True
         say(json.dumps(line), flush=True)
+    # a team's own keys get the team's tools: LiteLLM shows a key no tool server without its own grant
+    # (require_key_mcp_access_defined), so without this only agents could use them
+    for team, w in sorted(wanted.items()):
+        if not apply or team not in teams or not (w.get("servers") or ids):
+            continue
+        want = permission(w.get("servers") or {}, ids) if w.get("servers") else {"mcp_servers": []}
+        for alias, k in sorted(admin.keys(teams[team]["team_id"]).items()):
+            if not (MANAGED.match(alias) and alias.rsplit("-", 1)[0] == team):
+                continue
+            have = k.get("object_permission") or {}
+            if sorted(have.get("mcp_servers") or []) != want["mcp_servers"] or                     (have.get("mcp_tool_permissions") or {}) != (want.get("mcp_tool_permissions") or {}):
+                admin.set_key_permission(k["token"], want)
+                say(json.dumps({"message": "keys", "team": team, "alias": alias, "action": "tools granted",
+                                "servers": want["mcp_servers"]}), flush=True)
     for (p, sec), hashes in sorted(gone.items()):
         try:
             say(json.dumps({"message": "keys", "action": "old values disabled", "secret": sec, "project": p,
