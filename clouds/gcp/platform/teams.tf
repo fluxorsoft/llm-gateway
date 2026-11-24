@@ -20,5 +20,6 @@ module "team" {
   gateway_network_id  = google_compute_network.this.id
   domain              = var.domain
   name                = var.name
+  location            = var.primary_region
   peer_after          = [for r in google_redis_instance.this : r.id] # Redis peers the same network, one at a time
 }

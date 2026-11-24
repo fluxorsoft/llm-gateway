@@ -14,6 +14,7 @@ variable "gateway_project" { type = string }
 variable "gateway_network_id" { type = string }
 variable "domain" { type = string }
 variable "name" { type = string }
+variable "location" { type = string } # where the team's kept words live: the gateway's primary region, as its own usage record
 variable "members" {
   type        = list(object({ id = string, handle = string, daily_usd = optional(number) }))
   default     = []
@@ -185,6 +186,7 @@ resource "google_bigquery_dataset" "words" {
   count                           = var.capture == null ? 0 : 1
   project                         = var.project
   dataset_id                      = "llm_words"
+  location                        = var.location
   description                     = "Questions and answers this team chose to keep (llm-gateway capture); deleted after ${try(var.capture.days, 0)} days"
   default_partition_expiration_ms = try(var.capture.days, 1) * 86400000
   delete_contents_on_destroy      = true
