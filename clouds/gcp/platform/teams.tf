@@ -15,6 +15,7 @@ module "team" {
   app_service_account = each.value.app_service_account
   network             = try(each.value.network, null)
   members             = each.value.members
+  capture             = try(module.settings.capture[each.key], null)
   gateway_project     = var.project
   gateway_network_id  = google_compute_network.this.id
   domain              = var.domain

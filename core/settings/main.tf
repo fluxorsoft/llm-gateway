@@ -37,6 +37,10 @@ locals {
   safety = try(local.catalogue.safety, {})
   levels = ["LOW_AND_ABOVE", "MEDIUM_AND_ABOVE", "HIGH"]
 
+  # keeping the words: only for teams the catalogue approves, for at most its max_days
+  capture_ok   = try(local.catalogue.capture.approved_teams, [])
+  capture_days = try(local.catalogue.capture.max_days, 90)
+
   # Who chooses a key's value: LiteLLM (schema 2 and later), or we do, as 1.0.0 did (schema 1, until switched).
   key_maker = try(local.catalogue.key_maker, local.schema >= 2 ? "litellm" : "terraform")
 
@@ -82,6 +86,9 @@ locals {
     [for t, v in local.whole : "${t}: safety '${v.safety}' is not in the catalogue" if try(v.safety, null) != null && !contains(keys(local.safety), try(v.safety, ""))],
     flatten([for n, r in local.safety : [for k, l in r : "catalogue: safety '${n}': ${k} is one of ${join(", ", local.levels)}" if contains(["injection", "harmful"], k) && !contains(local.levels, l)]]),
     flatten([for n, r in local.safety : [for k in keys(r) : "catalogue: safety '${n}' sets '${k}'; it can set injection, harmful and sensitive_data" if !contains(["injection", "harmful", "sensitive_data"], k)]]),
+    [for t, v in local.whole : "${t}: keeping words needs the team in the catalogue's capture.approved_teams" if try(v.capture, null) != null && !contains(local.capture_ok, t)],
+    [for t, v in local.whole : "${t}: capture.days must be 1 to ${local.capture_days}" if try(v.capture, null) != null && !try(v.capture.days >= 1 && v.capture.days <= local.capture_days, false)],
+    flatten([for t, v in local.whole : [for r in try(v.capture.readers, []) : "${t}: a capture reader is user:, group: or serviceAccount:, not '${r}'" if !can(regex("^(user|group|serviceAccount):", r))]]),
     [for p in distinct([for t, v in local.whole : v.project]) : "project '${p}' is used by more than one team" if length([for t, v in local.whole : t if v.project == p]) > 1],
   )
 }
@@ -107,6 +114,10 @@ output "safety" {
     harmful        = try(r.harmful, "MEDIUM_AND_ABOVE")
     sensitive_data = try(r.sensitive_data, true)
   } if contains([for t, v in local.whole : try(v.safety, "")], n) }
+}
+
+output "capture" {
+  value = { for t, v in local.whole : t => { days = v.capture.days, readers = try(v.capture.readers, []) } if try(v.capture, null) != null && contains(local.capture_ok, t) }
 }
 
 output "team_safety" { value = { for t, v in local.whole : t => v.safety if try(v.safety, null) != null } }

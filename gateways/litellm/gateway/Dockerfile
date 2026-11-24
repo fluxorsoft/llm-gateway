@@ -9,7 +9,7 @@ FROM ${LITELLM_IMAGE} AS open
 USER root
 RUN rm -rf /app/enterprise /app/.venv/lib/python3.*/site-packages/litellm_enterprise* /opt/liteadmin /app/docker \
     && test -z "$(find / -xdev -iname '*litellm_enterprise*' -not -path '/proc/*' 2>/dev/null)"
-COPY gateways/litellm/gateway/config.yaml gateways/litellm/gateway/guard.py gateways/litellm/gateway/armor.py gateways/litellm/gateway/usage.py /etc/litellm/
+COPY gateways/litellm/gateway/config.yaml gateways/litellm/gateway/guard.py gateways/litellm/gateway/armor.py gateways/litellm/gateway/usage.py gateways/litellm/gateway/capture.py /etc/litellm/
 COPY src/onedoorai /opt/onedoorai/onedoorai
 
 FROM scratch

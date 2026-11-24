@@ -191,3 +191,29 @@ resource "google_monitoring_alert_policy" "price_check" {
     auto_close = "604800s"
   }
 }
+
+# ---- keeping the words (capture): to the team's own project, never kept here ----------------------------------------------
+resource "google_logging_project_exclusion" "words" {
+  count  = length(module.settings.capture) == 0 ? 0 : 1
+  name   = "${var.name}-words-not-here"
+  filter = "jsonPayload.message=\"llm words\""
+}
+
+resource "google_logging_project_sink" "words" {
+  for_each               = module.settings.capture
+  name                   = "${var.name}-words-${each.key}"
+  destination            = "bigquery.googleapis.com/projects/${module.settings.teams[each.key].project}/datasets/${module.team[each.key].words_dataset}"
+  filter                 = "resource.type=\"cloud_run_revision\" AND jsonPayload.message=\"llm words\" AND jsonPayload.team=\"${each.key}\""
+  unique_writer_identity = true
+  bigquery_options {
+    use_partitioned_tables = true
+  }
+}
+
+resource "google_bigquery_dataset_iam_member" "words_writer" {
+  for_each   = module.settings.capture
+  project    = module.settings.teams[each.key].project
+  dataset_id = module.team[each.key].words_dataset
+  role       = "roles/bigquery.dataEditor"
+  member     = google_logging_project_sink.words[each.key].writer_identity
+}

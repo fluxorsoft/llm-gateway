@@ -14,3 +14,4 @@ app_service_account: llm-app
 safety: strict
 developer_tools: [gemini-cli, codex]
 tool_models: {gemini-3.8-flash: code, gemini-3.5-flash: code}
+capture: {days: 30, readers: ["group:eng-leads@example.com"]}

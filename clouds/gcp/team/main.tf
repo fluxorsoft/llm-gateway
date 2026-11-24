@@ -20,6 +20,12 @@ variable "members" {
   description = "People with a personal key; each gets a secret only they can read"
 }
 
+variable "capture" {
+  type        = object({ days = number, readers = list(string) })
+  default     = null
+  description = "Keep this team's questions and answers here, for days, readable by readers only"
+}
+
 variable "peer_after" {
   type        = list(string)
   default     = []
@@ -32,7 +38,7 @@ variable "network" {
 }
 
 resource "google_project_service" "this" {
-  for_each           = toset(["aiplatform", "secretmanager", "iam", "run", "compute", "dns"])
+  for_each           = toset(concat(["aiplatform", "secretmanager", "iam", "run", "compute", "dns"], var.capture == null ? [] : ["bigquery"]))
   project            = var.project
   service            = "${each.key}.googleapis.com"
   disable_on_destroy = false
@@ -168,6 +174,27 @@ resource "google_secret_manager_secret_iam_member" "person_runner" {
   role      = each.value[1]
   member    = "serviceAccount:${var.runner_email}"
 }
+
+# ---- keeping the words: in this project, deleted after capture.days ---------------------------------------------------------
+resource "google_bigquery_dataset" "words" {
+  count                           = var.capture == null ? 0 : 1
+  project                         = var.project
+  dataset_id                      = "llm_words"
+  description                     = "Questions and answers this team chose to keep (llm-gateway capture); deleted after ${try(var.capture.days, 0)} days"
+  default_partition_expiration_ms = try(var.capture.days, 1) * 86400000
+  delete_contents_on_destroy      = true
+  depends_on                      = [google_project_service.this]
+}
+
+resource "google_bigquery_dataset_iam_member" "words_reader" {
+  for_each   = toset(try(var.capture.readers, []))
+  project    = var.project
+  dataset_id = google_bigquery_dataset.words[0].dataset_id
+  role       = "roles/bigquery.dataViewer"
+  member     = each.key
+}
+
+output "words_dataset" { value = one(google_bigquery_dataset.words[*].dataset_id) }
 
 output "app_email" { value = google_service_account.app.email }
 output "secret" { value = google_secret_manager_secret.key.secret_id }
