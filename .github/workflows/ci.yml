@@ -75,9 +75,11 @@ jobs:
         run: |
           cd gateways/litellm/gateway/tests/integration
           python3 fake_google.py > /dev/null 2>&1 &
+          python3 -m pip install -q mcp==1.21.0 pydantic==2.11.9
+          python3 mcp_server.py > /dev/null 2>&1 &
           docker run -d --name gateway --network host -v "$PWD/config.yaml:/etc/litellm/config.yaml:ro" \
             -e ARMOR_ENDPOINT=http://127.0.0.1:9100 -e GCE_METADATA_HOST=127.0.0.1:9100 -e GCE_METADATA_IP=127.0.0.1:9100 \
-            -e LITELLM_MASTER_KEY=sk-test             -e GATEWAY_SETTINGS='{"litellm_settings": {"request_timeout": 600}}' gateway:test
+            -e LITELLM_MASTER_KEY=sk-test             -e MCP_ON=1 -e CHECK_TOOL_TRAFFIC=1 -e ARMOR_PROJECT=example-project -e ARMOR_LOCATION=europe-west1 -e ARMOR_TEMPLATE=t -e ARMOR_ENDPOINT=http://127.0.0.1:9100 -e GATEWAY_SETTINGS='{"litellm_settings": {"request_timeout": 600}}' gateway:test
           docker run -d --name developer --network host -v "$PWD/config.yaml:/etc/litellm/config.yaml:ro"             -e ARMOR_ENDPOINT=http://127.0.0.1:9100 -e GCE_METADATA_HOST=127.0.0.1:9100 -e GCE_METADATA_IP=127.0.0.1:9100             -e LITELLM_MASTER_KEY=sk-test -e GATEWAY_ROLE=developer gateway:test             --config /etc/litellm/config.yaml --port 8081 --num_workers 1
           for p in 8080 8081; do
             for i in $(seq 1 60); do curl -sf http://127.0.0.1:$p/health/liveliness > /dev/null && break; sleep 2; done
@@ -94,6 +96,8 @@ jobs:
       - name: Agents' Google identities
         run: |
           docker run --rm -e PYTHONPATH=/w/src -v "$PWD:/w" --entrypoint /app/.venv/bin/python gateway:test             /w/gateways/litellm/gateway/tests/integration/test_identity.py
+      - name: Tool traffic, checked on the way
+        run: GATEWAY=http://127.0.0.1:8080 python3 gateways/litellm/gateway/tests/integration/test_tool_traffic.py
       - name: The developers' door
         run: GATEWAY=http://127.0.0.1:8080 DEVELOPER=http://127.0.0.1:8081 GOOGLE=http://127.0.0.1:9100 python3 gateways/litellm/gateway/tests/integration/test_developer_door.py
       - name: What the gateway said

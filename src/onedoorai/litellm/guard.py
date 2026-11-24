@@ -187,6 +187,16 @@ class Filter:
                 return await refuse(send, 401, str(e))
             headers = [(k, v) for k, v in headers if k != b"authorization"] + [(b"authorization", ("Bearer " + key).encode())]
             extra["agent"] = who["agent"]
+            cap = who.get("calls_per_task")
+            if cap:  # an agent with a cap must say which task each call belongs to
+                task_id = given.get(b"x-task-id", b"").decode(errors="replace")
+                if not TASK.match(task_id):
+                    return await refuse(send, 400, "not allowed: this agent must send X-Task-Id (1 to 64 letters, digits and . _ : -)")
+                from .tooltraffic import counter
+
+                n = await asyncio.to_thread(counter().add, f"{who['team']}~{who['agent']}:{task_id}")
+                if n > cap:
+                    return await refuse(send, 429, f"this task has made its {cap} calls (calls_per_task)")
             # acting for a person: only from a signed token of that person
             acting = given.get(b"x-acting-for", b"").decode(errors="replace")
             if acting:
@@ -229,6 +239,17 @@ class Filter:
             body = json.dumps(data).encode()
             headers += [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
 
+        # check_tool_traffic: a tool call's words before it goes on, and its answer before it comes back
+        if fields is MCP and data.get("method") == "tools/call" and os.environ.get("CHECK_TOOL_TRAFFIC") == "1":
+            import asyncio
+
+            from . import tooltraffic
+
+            why = await asyncio.to_thread(tooltraffic.check, tooltraffic.call_text(data))
+            if why:
+                return await rpc_refuse(send, data.get("id"), "the tool call: " + why)
+            send = held(send, data.get("id"))
+
         sent = False
 
         async def again():
@@ -239,6 +260,42 @@ class Filter:
             return await receive()
 
         await self.app({**scope, "headers": headers}, again, send)
+
+
+def held(send, request_id):
+    """A send that keeps a tool's answer until Model Armor has read it, then lets it go, or sends a refusal instead."""
+    start, chunks = {}, []
+
+    async def hold(message):
+        if message["type"] == "http.response.start":
+            start.update(message)
+            return
+        chunks.append(message.get("body", b""))
+        if message.get("more_body"):
+            return
+        import asyncio
+
+        from . import tooltraffic
+
+        body = b"".join(chunks)
+        kind = dict(start.get("headers") or []).get(b"content-type", b"").decode()
+        why = await asyncio.to_thread(tooltraffic.check, tooltraffic.answer_text(body, kind), True) if start.get("status") == 200 else None
+        if why:
+            return await rpc_refuse(send, request_id, "the tool's answer: " + why)
+        headers = [(k, v) for k, v in start.get("headers") or [] if k != b"content-length"] + [(b"content-length", str(len(body)).encode())]
+        await send({**start, "headers": headers})
+        await send({"type": "http.response.body", "body": body})
+    return hold
+
+
+async def rpc_refuse(send, request_id, why):
+    print(json.dumps({"severity": "WARNING", "message": "gateway refused", "refused": {"code": 200, "why": why, "tool": True}}), flush=True)
+    from .tooltraffic import rpc_error
+
+    body = rpc_error(request_id, why)
+    await send({"type": "http.response.start", "status": 200,
+                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+    await send({"type": "http.response.body", "body": body})
 
 
 async def refuse(send, code, why):

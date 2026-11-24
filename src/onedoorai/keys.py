@@ -182,8 +182,12 @@ def run(wanted, admin, write=write_secret, apply=False, say=print, agents_secret
             g["permission"] = permission(g.get("tools") or {}, ids) if g.get("tools") else {"mcp_servers": []}
     for action, team, alias in plan(wanted, existing):
         w, line = wanted[team], {"message": "keys", "team": team, "alias": alias, "action": action}
-        if action in ("keep", "stop", "start") and AGENT.match(alias) and apply:  # an agent's tools can change
+        if action in ("keep", "stop", "start") and AGENT.match(alias) and apply:  # an agent's tools and cap can change
             agent = next(g for g in w["agents"] if f"{team}~{g['name']}" == alias)
+            entry = agent_map.get(agent["identity"])
+            if entry is not None and entry.get("calls_per_task") != agent.get("calls_per_task"):
+                entry["calls_per_task"] = agent.get("calls_per_task")
+                map_changed = True
             if (existing[team][alias].get("object_permission") or {}).get("mcp_servers", []) != agent["permission"]["mcp_servers"] or agent["permission"].get("mcp_tool_permissions"):
                 admin.set_key_permission(existing[team][alias]["token"], agent["permission"])
         if action != "keep":
@@ -202,7 +206,7 @@ def run(wanted, admin, write=write_secret, apply=False, say=print, agents_secret
             made = admin.create_agent(teams[team]["team_id"], alias, teams[team].get("models") or w.get("models") or [], w["days"], agent, value)
             if agent.get("stopped"):
                 admin.block(admin.keys(teams[team]["team_id"])[alias]["token"])
-            agent_map[agent["identity"]] = {"key": made, "team": team, "agent": agent["name"]}
+            agent_map[agent["identity"]] = {"key": made, "team": team, "agent": agent["name"], "calls_per_task": agent.get("calls_per_task")}
             map_changed = True
         elif action == "create":
             value = "sk-" + secrets.token_urlsafe(36) if w.get("maker", "litellm") == "terraform" else None

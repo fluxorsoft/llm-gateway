@@ -103,6 +103,12 @@ variable "vpc_sc" {
   description = "A VPC Service Controls perimeter around the gateway and every team project. Start in dry run, read the violations, then enforce"
 }
 
+variable "check_tool_traffic" {
+  type        = bool
+  default     = false
+  description = "Model Armor reads every tool call's arguments and every tool's answer as they pass (about 0.15 s each). Off: tool answers are read when they come back in the next model call"
+}
+
 variable "budget_alerts" {
   type        = bool
   default     = false

@@ -77,6 +77,37 @@ class IdentityTest(unittest.TestCase):
         self.assertEqual(asyncio.run(call([(b"authorization", b"Bearer sk-plain"), (b"x-task-id", b"bad id!")])), 400)
         identity._identities = None
 
+    def test_the_calls_per_task_cap(self):
+        from onedoorai.litellm import tooltraffic
+        tooltraffic._counter = tooltraffic.Counter()  # no Redis here: counted in this instance
+        capped = identity.Identities(AUD, "p/s", fetch=lambda: {"k1": CERT}, read_map=lambda: json.dumps(
+            {AGENT: {"key": "sk-agent", "team": "orders", "agent": "sorter", "calls_per_task": 3}}))
+        identity._identities = capped
+
+        async def app(scope, receive, send):
+            await receive()
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"{}"})
+
+        async def call(task):
+            sent = []
+            headers = [(b"authorization", ("Bearer " + token()).encode())] + ([(b"x-task-id", task.encode())] if task else [])
+            scope = {"type": "http", "method": "POST", "path": "/v1/chat/completions", "query_string": b"", "headers": headers}
+            body = json.dumps({"model": "m", "messages": [{"role": "user", "content": "hi"}]}).encode()
+
+            async def receive():
+                return {"type": "http.request", "body": body, "more_body": False}
+
+            async def send(m):
+                sent.append(m)
+            await guard.Filter(app)(scope, receive, send)
+            return sent[0]["status"]
+
+        self.assertEqual([asyncio.run(call("job-1")) for _ in range(4)], [200, 200, 200, 429])
+        self.assertEqual(asyncio.run(call("job-2")), 200)  # another task starts again
+        self.assertEqual(asyncio.run(call(None)), 400)    # a capped agent must name its task
+        identity._identities = None
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

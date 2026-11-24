@@ -4,6 +4,8 @@ model_list:
   - {model_name: pretend-bad, litellm_params: {model: openai/p, api_key: none, mock_response: "an answer with BLOCKWORD"}}
   - {model_name: pretend-skip, litellm_params: {model: openai/p, api_key: none, mock_response: "an answer with SKIPWORD"}}
   - {model_name: pretend-embed, litellm_params: {model: openai/e, api_key: none, mock_response: [0.1, 0.2]}}
+mcp_servers:
+  tools: {url: "http://127.0.0.1:8765/mcp", transport: http}
 litellm_settings: {drop_params: true, turn_off_message_logging: true}
 general_settings: {master_key: sk-test}
 guardrails:

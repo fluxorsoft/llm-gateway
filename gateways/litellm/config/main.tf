@@ -106,7 +106,7 @@ output "keys" {
     models  = local.names[t]
     maker   = module.settings.key_maker
     members = v.members
-    agents  = v.agents
+    agents  = [for g in v.agents : merge(g, { calls_per_task = g.calls })]
     servers = try(v.tool_servers, {})
   } }
 }
