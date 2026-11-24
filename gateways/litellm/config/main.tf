@@ -17,7 +17,7 @@ variable "settings_dir" {
 
 variable "admin_url" {
   type    = string
-  default = "http://127.0.0.1:9000" # gateways/litellm/runner/admin_proxy.py
+  default = "http://127.0.0.1:9000" # onedoorai admin (src/onedoorai/admin.py)
 }
 
 variable "master_key" {

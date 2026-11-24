@@ -11,7 +11,7 @@ provider_installation {
 }
 EOF
 export TF_CLI_CONFIG_FILE=/tmp/terraformrc
-python /repo/runner/admin_proxy.py &
+python -m onedoorai admin &
 for i in $(seq 1 60); do
   wget -q -O /dev/null http://127.0.0.1:9000/health/liveliness && break
   [ "$i" = 60 ] && fail "the admin service did not answer"

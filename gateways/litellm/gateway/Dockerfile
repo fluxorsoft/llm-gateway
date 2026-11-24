@@ -9,7 +9,8 @@ FROM ${LITELLM_IMAGE} AS open
 USER root
 RUN rm -rf /app/enterprise /app/.venv/lib/python3.*/site-packages/litellm_enterprise* /opt/liteadmin /app/docker \
     && test -z "$(find / -xdev -iname '*litellm_enterprise*' -not -path '/proc/*' 2>/dev/null)"
-COPY config.yaml guard.py armor.py usage.py /etc/litellm/
+COPY gateways/litellm/gateway/config.yaml gateways/litellm/gateway/guard.py gateways/litellm/gateway/armor.py gateways/litellm/gateway/usage.py /etc/litellm/
+COPY src/onedoorai /opt/onedoorai/onedoorai
 
 FROM scratch
 COPY --from=open / /
@@ -22,7 +23,8 @@ ENV PATH=/app/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:
     LITELLM_LOCAL_MODEL_COST_MAP=True \
     DISABLE_SCHEMA_UPDATE=true \
     PYTHONDONTWRITEBYTECODE=1 \
-    HOME=/tmp
+    HOME=/tmp \
+    PYTHONPATH=/opt/onedoorai
 LABEL org.opencontainers.image.title="LLM gateway (LiteLLM, open source parts)" \
       org.opencontainers.image.source="https://github.com/fluxorsoft/llm-gateway" \
       org.opencontainers.image.licenses="Apache-2.0 AND MIT"

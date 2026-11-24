@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "onedoorai"
+dynamic = ["version"]
+description = "One door to AI: the Python parts of an open-source LLM gateway on Google Cloud (LiteLLM, Model Armor)"
+readme = "src/onedoorai/README.md"
+license = "Apache-2.0"
+authors = [{ name = "Rakesh Gupta", email = "rakesh@getpipewright.dev" }]
+requires-python = ">=3.11"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "Topic :: Security",
+  "Topic :: Software Development :: Libraries",
+]
+dependencies = []
+
+[project.optional-dependencies]
+litellm = ["litellm>=1.108.15"]
+
+[project.scripts]
+onedoorai = "onedoorai.cli:main"
+
+[project.urls]
+Homepage = "https://www.getpipewright.dev/litellm-gateway.html"
+Source = "https://github.com/fluxorsoft/llm-gateway"
+
+[tool.hatch.version]
+path = "src/onedoorai/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/onedoorai"]

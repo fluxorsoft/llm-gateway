@@ -18,9 +18,16 @@ jobs:
           terraform_wrapper: false
       - name: The request filter
         run: python3 -m unittest discover -s gateways/litellm/gateway/tests
+      - name: The onedoorai package builds, installs and runs
+        run: |
+          python3 -m pip install -q build==1.2.2.post1
+          python3 -m build -q --wheel --outdir dist .
+          python3 -m venv /tmp/w && /tmp/w/bin/pip install -q dist/onedoorai-*.whl
+          /tmp/w/bin/onedoorai --version
+          ! /tmp/w/bin/onedoorai admin 2> err.txt && grep -q "address is needed" err.txt
       - name: Python and shell are well formed
         run: |
-          python3 -m compileall -q gateways apps
+          python3 -m compileall -q src gateways apps
           bash -n scripts/*.sh clouds/gcp/scripts/*.sh && sh -n gateways/litellm/runner/run.sh
       - name: Terraform is formatted and valid
         run: |
@@ -51,7 +58,7 @@ jobs:
           cosign verify "$base" \
             --certificate-identity=https://github.com/BerriAI/project-releaser/.github/workflows/release.yml@refs/heads/main \
             --certificate-oidc-issuer=https://token.actions.githubusercontent.com > /dev/null
-          docker build -q --build-arg "LITELLM_IMAGE=$base" -t gateway:test gateways/litellm/gateway
+          docker build -q --build-arg "LITELLM_IMAGE=$base" -t gateway:test -f gateways/litellm/gateway/Dockerfile .
       - name: Start
         run: |
           cd gateways/litellm/gateway/tests/integration

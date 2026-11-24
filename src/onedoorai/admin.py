@@ -1,6 +1,6 @@
 """A local door to the admin service: adds the Google identity Cloud Run asks for, and passes everything else through.
 
-  ADMIN_URL=https://... python admin_proxy.py        then open http://127.0.0.1:9000/ui/
+  onedoorai admin --url https://...        (or ADMIN_URL=https://...)   then open http://127.0.0.1:9000/ui/
 
 On a laptop the identity is the signed-in gcloud user's; in the runner it is the runner's service account. The identity
 goes in X-Serverless-Authorization, so LiteLLM's own Authorization header is untouched. Listens on 127.0.0.1 only.
@@ -18,10 +18,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-ADMIN = os.environ["ADMIN_URL"].rstrip("/")
-HOST = urllib.parse.urlsplit(ADMIN).netloc
-PORT = int(os.environ.get("ADMIN_PROXY_PORT", "9000"))
-CONTEXT = ssl.create_default_context(cafile=os.environ.get("CA_BUNDLE") or None)
+ADMIN, HOST, PORT, CONTEXT = "", "", 9000, None  # set by main()
 HOP = {"connection", "keep-alive", "transfer-encoding", "te", "upgrade", "proxy-authorization", "host",
        "x-serverless-authorization", "content-length"}
 METADATA = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience="
@@ -84,7 +81,18 @@ class Server(ThreadingHTTPServer):
     daemon_threads = True
 
 
-if __name__ == "__main__":
+def main(url=None, port=None):
+    global ADMIN, HOST, PORT, CONTEXT
+    ADMIN = (url or os.environ.get("ADMIN_URL") or "").rstrip("/")
+    if not ADMIN:
+        raise SystemExit("the admin service's address is needed: --url, or ADMIN_URL")
+    HOST = urllib.parse.urlsplit(ADMIN).netloc
+    PORT = int(port or os.environ.get("ADMIN_PROXY_PORT", "9000"))
+    CONTEXT = ssl.create_default_context(cafile=os.environ.get("CA_BUNDLE") or None)
     identity()
     print(f"admin service on http://127.0.0.1:{PORT}", file=sys.stderr, flush=True)
     Server(("127.0.0.1", PORT), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()

@@ -12,7 +12,7 @@ echo "signature verified: $base" >&2
 tag="$(git rev-parse --short HEAD)-${GITHUB_RUN_ID:-local}"
 build() {
   case "$1" in
-    gateway) docker build -q --build-arg "LITELLM_IMAGE=$base" -t "$REPO/gateway:$tag" gateways/litellm/gateway ;;
+    gateway) docker build -q --build-arg "LITELLM_IMAGE=$base" -t "$REPO/gateway:$tag" -f gateways/litellm/gateway/Dockerfile . ;;
     runner) docker build -q --build-arg "SETTINGS_DIR=$SETTINGS_DIR" -t "$REPO/runner:$tag" -f gateways/litellm/runner/Dockerfile . ;;
     app) docker build -q -t "$REPO/app:$tag" apps ;;
   esac
