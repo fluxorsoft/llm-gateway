@@ -121,7 +121,7 @@ resource "google_compute_backend_service" "developer" {
   name                  = "${var.name}-developer"
   load_balancing_scheme = "INTERNAL_MANAGED"
   protocol              = "HTTPS"
-  timeout_sec           = 3600 # streamed answers
+  # no timeout_sec: Google refuses one for Cloud Run backends; the service's own timeout (3600 s) applies
   dynamic "backend" {
     for_each = google_compute_region_network_endpoint_group.developer
     content {

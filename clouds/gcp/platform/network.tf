@@ -235,10 +235,14 @@ resource "tls_locally_signed_cert" "front" {
 
 resource "google_certificate_manager_certificate" "trial" {
   count = local.private_ca ? 1 : 0
-  name  = "${var.name}-trial"
+  # a certificate's names cannot change in place: with the developers' door it is another certificate, made first
+  name  = local.door_on ? "${var.name}-trial-dev" : "${var.name}-trial"
   scope = "ALL_REGIONS"
   self_managed {
     pem_certificate = tls_locally_signed_cert.front[0].cert_pem
     pem_private_key = tls_private_key.front[0].private_key_pem
+  }
+  lifecycle {
+    create_before_destroy = true
   }
 }
