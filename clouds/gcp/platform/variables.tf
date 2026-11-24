@@ -73,6 +73,15 @@ variable "developer_door" {
   }
 }
 
+variable "audit_record" {
+  type = object({
+    days = optional(number, 365) # every record is kept unchanged this long
+    lock = optional(bool, false) # lock the retention policy: it can then never be shortened or removed (not even by you)
+  })
+  default     = null
+  description = "Once a day, what LiteLLM is set to, in a bucket that keeps every record unchanged; each record carries the previous one's fingerprint"
+}
+
 variable "budget_alerts" {
   type        = bool
   default     = false

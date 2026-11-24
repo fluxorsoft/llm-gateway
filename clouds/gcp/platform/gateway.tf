@@ -573,3 +573,56 @@ resource "google_model_armor_template" "rules" {
     }
   }
 }
+
+# ---- the admin record (audit_record): daily, kept unchanged for its retention period -----------------------------------
+resource "google_storage_bucket" "audit" {
+  count                       = var.audit_record == null ? 0 : 1
+  name                        = "${var.project}-${var.name}-audit"
+  location                    = var.primary_region
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  force_destroy               = !var.deletion_protection
+  retention_policy {
+    retention_period = var.audit_record.days * 86400
+    is_locked        = var.audit_record.lock
+  }
+}
+
+resource "google_storage_bucket_iam_member" "audit" {
+  for_each = var.audit_record == null ? toset([]) : toset(["roles/storage.objectCreator", "roles/storage.objectViewer"])
+  bucket   = google_storage_bucket.audit[0].name
+  role     = each.key
+  member   = "serviceAccount:${google_service_account.runner.email}"
+}
+
+resource "google_service_account" "audit" {
+  count      = var.audit_record == null ? 0 : 1
+  account_id = "${var.name}-audit"
+}
+
+resource "google_cloud_run_v2_job_iam_member" "audit" {
+  count    = var.audit_record == null ? 0 : 1
+  name     = google_cloud_run_v2_job.runner.name
+  location = var.primary_region
+  role     = "roles/run.jobsExecutorWithOverrides"
+  member   = "serviceAccount:${google_service_account.audit[0].email}"
+}
+
+resource "google_cloud_scheduler_job" "audit" {
+  count    = var.audit_record == null ? 0 : 1
+  name     = "${var.name}-audit"
+  region   = var.primary_region
+  schedule = "30 5 * * *"
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project}/locations/${var.primary_region}/jobs/${google_cloud_run_v2_job.runner.name}:run"
+    body = base64encode(jsonencode({ overrides = { containerOverrides = [{ env = [
+      { name = "MODE", value = "audit" }, { name = "AUDIT_BUCKET", value = google_storage_bucket.audit[0].name },
+    ] }] } }))
+    headers = { "Content-Type" = "application/json" }
+    oauth_token {
+      service_account_email = google_service_account.audit[0].email
+    }
+  }
+  depends_on = [google_cloud_run_v2_job_iam_member.audit]
+}
