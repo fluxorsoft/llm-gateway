@@ -69,8 +69,11 @@ resource "google_sql_user" "this" {
   name                = "litellm"
   instance            = google_sql_database_instance.this.name
   password_wo         = ephemeral.random_password.db.result
-  password_wo_version = 1
+  password_wo_version = var.db_password_round
   deletion_policy     = "ABANDON"
+  # the password is never kept, and each run invents one: the user and the database's address must be written in the same
+  # run. Waiting for the secrets means a failure there leaves no user behind with a password nobody has.
+  depends_on = [google_secret_manager_secret.this]
 }
 
 # a private address for the database, reachable from every gateway region
@@ -152,7 +155,7 @@ resource "google_secret_manager_secret" "this" {
 resource "google_secret_manager_secret_version" "database_url" {
   secret                 = google_secret_manager_secret.this["database-url"].id
   secret_data_wo         = "postgresql://litellm:${ephemeral.random_password.db.result}@db.${var.name}.internal:5432/litellm?sslmode=require"
-  secret_data_wo_version = 1
+  secret_data_wo_version = var.db_password_round
   depends_on             = [google_sql_user.this]
 }
 

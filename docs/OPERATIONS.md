@@ -100,6 +100,13 @@ between the export and the restart are lost: a few seconds of spend. Run the che
 Measured on trial size: the failover took about 6 minutes, nearly all of it the promotion; the fail-back about 6
 minutes; the new copy about 7.5 minutes. The scripts need `gcloud`, and `jq` or Python.
 
+## The database's password (`db_password_round`)
+
+It is never kept anywhere but the database and its secret. If a first install fails between making the database's user and
+writing the secret, the gateways cannot sign in ("password authentication failed"); raise `db_password_round` by one and
+apply: both get a new password in the same run. Then restart the gateways (`clouds/gcp/scripts/db_common.sh` has
+`restart_gateways`, or redeploy). The same rotates the password on purpose.
+
 ## A load test
 
 `CHECKS=chat-load` on a team's check job: real chat calls, whole and streamed, at `LOAD_PER_SECOND` for `LOAD_SECONDS`,

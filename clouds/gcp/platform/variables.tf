@@ -92,6 +92,12 @@ variable "cmek_keys" {
   }
 }
 
+variable "db_password_round" {
+  type        = number
+  default     = 1
+  description = "Raise it by one to give the database a new password (written to the database and its secret in the same run): after a first install that failed between the two, or to rotate it. Then restart the gateways"
+}
+
 variable "vpc_sc" {
   type = object({
     policy     = string                # accessPolicies/<number>: the organisation's access policy
