@@ -28,6 +28,11 @@ locals {
     daily_usd = try(m.daily_usd, null)
   }] }
 
+  # coding tools ask for models by their provider's names; a team maps each name to one of its own models. LiteLLM's team
+  # aliases are not limited by the key's model list, so the rules below are what keep a team to its own models.
+  tools          = try(local.catalogue.tools, {})
+  all_model_keys = [for k, m in local.models : "${m.team}-${m.alias}"]
+
   # Who chooses a key's value: LiteLLM (schema 2 and later), or we do, as 1.0.0 did (schema 1, until switched).
   key_maker = try(local.catalogue.key_maker, local.schema >= 2 ? "litellm" : "terraform")
 
@@ -66,6 +71,10 @@ locals {
     [for t, ms in local.members : "${t}: two members have the same name before the @" if length(distinct([for m in ms : m.handle])) != length(ms)],
     flatten([for t, ms in local.members : [for m in ms : "${t}: ${m.id}'s daily_usd must be above 0 and at most the team's budget" if m.daily_usd != null && !try(m.daily_usd > 0 && m.daily_usd <= local.whole[t].budget_monthly_usd, false)]]),
     [for t, v in local.whole : "${t}: member_monthly_usd must be above 0 and at most the team's budget" if try(v.member_monthly_usd, null) != null && !try(v.member_monthly_usd > 0 && v.member_monthly_usd <= v.budget_monthly_usd, false)],
+    flatten([for t, v in local.whole : [for x in try(v.developer_tools, []) : "${t}: tool '${x}' is not in the catalogue" if !contains(keys(local.tools), x)]]),
+    flatten([for t, v in local.whole : [for n, a in try(v.tool_models, {}) : "${t}: tool_models '${n}' points at '${a}', which is not one of the team's models" if !contains(keys(v.models), a)]]),
+    flatten([for t, v in local.whole : [for n, a in try(v.tool_models, {}) : "${t}: tool_models '${n}' is also the name of a model here" if contains(local.all_model_keys, n)]]),
+    flatten([for t, v in local.whole : [for x in try(v.developer_tools, []) : [for n in try(local.tools[x].asks_for, []) : "${t}: tool '${x}' asks for '${n}': add it to tool_models" if !contains(keys(try(v.tool_models, {})), n)]]]),
     [for p in distinct([for t, v in local.whole : v.project]) : "project '${p}' is used by more than one team" if length([for t, v in local.whole : t if v.project == p]) > 1],
   )
 }

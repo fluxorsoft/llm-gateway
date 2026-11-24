@@ -30,6 +30,14 @@ run "people_get_a_handle_and_a_share" {
   }
 }
 
+run "a_tool_name_cannot_take_another_models_name_or_go_unmapped" {
+  command = plan
+  variables {
+    dir = "./testdata/sneaky"
+  }
+  expect_failures = [output.teams, output.deployments, check.key_maker]
+}
+
 run "what_this_version_cannot_serve_is_refused" {
   command = plan
   variables {

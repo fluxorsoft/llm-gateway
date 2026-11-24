@@ -73,7 +73,9 @@ resource "litellm_team" "this" {
   tpm_limit       = each.value.limits.tpm
   metadata        = { owner = each.value.owner }
   # each person's share of the team's budget, when the team has people (null leaves 1.0.0 teams as they were)
-  team_member_budget          = try(each.value.member_monthly_usd, null)
+  team_member_budget = try(each.value.member_monthly_usd, null)
+  # the names coding tools ask for, each pointing at one of the team's own models (checked by the settings' rules)
+  model_aliases               = length(try(each.value.tool_models, {})) == 0 ? null : { for n, a in each.value.tool_models : n => "${each.key}-${a}" }
   team_member_budget_duration = try(each.value.member_monthly_usd, null) == null ? null : "1mo"
   depends_on                  = [litellm_model.this]
 }

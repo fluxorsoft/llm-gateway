@@ -1,0 +1,18 @@
+# The orders team: model calls stay in the EU, in its own project.
+owner: orders-leads@example.com
+project: orders-project-x      # where its model calls run and are billed
+residency: eu
+models:
+  fast:
+    model: gemini-3.5-flash
+    locations: [eu]
+    fallback: backup            # EU only, so it fails over to another model, not another place
+  backup:
+    model: gemini-3.8-flash
+    locations: [eu]
+budget_monthly_usd: 10
+limits: {rpm: 60, tpm: 100000}
+keys: [1]                       # to rotate: add 2, restart the app, remove 1
+key_days: 30
+app_service_account: llm-app    # the only identity that can read this team's key
+network: {region: europe-west2, cidr: 10.70.0.0/24}
