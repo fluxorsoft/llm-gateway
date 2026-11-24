@@ -40,7 +40,9 @@ Key rotation by pull request: `rotate.yml` in the onboarding repository adds the
 the services listed under `restart:` in the team file, and the next run removes the old key. For a key that leaked, run `rotate.yml` by hand with `now:` set to the team: it opens
 the pull request for the next key at once; after that deploy, run it again to remove the old key. When a key is removed, the key step also disables the secret's
 versions that hold it, so its value is no longer readable. The organisation and the repository must both allow GitHub
-Actions to create pull requests (Settings, Actions, General), or `rotate.yml` pushes its branch and stops.
+Actions to create pull requests (Settings, Actions, General); where that cannot be allowed, a `ROTATE_TOKEN` secret (a
+fine-grained token on the repository: contents and pull requests) opens them. `rotate.yml` checks the settings' rules
+itself, as GitHub holds `plan.yml` on a pull request opened by Actions until someone approves the run.
 `release-watch.yml` opens an issue: GitHub's own token may not change the workflow file that pins the release; give it
 a `RELEASE_WATCH_TOKEN` secret (a fine-grained token on the repository: contents, pull requests and workflows) and it
 opens the pull request instead.

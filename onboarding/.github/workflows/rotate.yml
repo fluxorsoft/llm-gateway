@@ -1,5 +1,8 @@
 # Mondays: the next key-rotation step for each team that is due, as one pull request (onedoorai rotate). Step 1 adds the
 # next key; after the deploy, the team's services listed under restart: are restarted onto it; step 2 removes the old key.
+# The settings' rules are checked here: GitHub holds plan.yml on a pull request opened by Actions until someone approves
+# the run. The organisation and the repository must allow Actions to open pull requests; where they cannot, a secret
+# ROTATE_TOKEN (a fine-grained token on this repository: contents and pull requests, read and write) opens it instead.
 name: rotate
 on:
   schedule:
@@ -29,16 +32,25 @@ jobs:
           repository: fluxorsoft/llm-gateway
           ref: ${{ steps.version.outputs.version }}
           path: gw
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
       - name: Due steps
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.ROTATE_TOKEN || github.token }}
           NOW: ${{ inputs.now }}
         working-directory: org
         run: |
           PYTHONPATH=../gw/src python3 -m onedoorai rotate --settings settings --write ${NOW:+--now "$NOW"} | tee ../steps.json
           git diff --quiet && { echo "no rotation due"; exit 0; }
+          terraform -chdir=../gw/core/settings init -backend=false -input=false > /dev/null
+          terraform -chdir=../gw/core/settings plan -input=false -no-color -var dir=../../../org/settings > ../rules.txt 2>&1 \
+            || { cat ../rules.txt; echo "::error::the rotated settings break a rule"; exit 1; }
           branch="rotate-$(date -u +%Y%m%d-%H%M)"
           git checkout -b "$branch"
           git -c user.name="rotate" -c user.email="rotate@users.noreply.github.com" commit -qam "Key rotation, $(date -u +%Y-%m-%d)"
           git push -q origin "$branch"
-          gh pr create --title "Key rotation, $(date -u +%Y-%m-%d)" --body "$(jq -r '"- \(.team): \(.step) (keys \(.keys) -> \(.next), \(.age_days) days)"' ../steps.json)"
+          body="$(jq -r '"- \(.team): \(.step) (keys \(.keys) -> \(.next), \(.age_days) days)"' ../steps.json)"
+          gh pr create --title "Key rotation, $(date -u +%Y-%m-%d)" \
+            --body "$(printf '%s\n\n%s\n' "$body" "The settings follow every rule (checked by this workflow).")"
