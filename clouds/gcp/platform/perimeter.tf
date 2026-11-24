@@ -2,8 +2,8 @@
 # cannot be read from outside it. Dry run first (enforce = false): violations are logged and nothing is blocked; read them in
 # Logging (protoPayload.metadata.dryRun=true), add the identities that need to come in, then enforce. Off unless vpc_sc is set.
 data "google_project" "team" {
-  for_each   = var.vpc_sc == null ? {} : module.settings.teams
-  project_id = each.value.project
+  for_each   = var.vpc_sc == null ? toset([]) : toset([for t in module.settings.teams : t.project])
+  project_id = each.key
 }
 
 locals {
