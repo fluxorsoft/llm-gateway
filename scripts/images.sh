@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 : "${REPO:?}" "${SETTINGS_DIR:=settings/example}"
-base="$(tr -d '\r\n' < LITELLM_IMAGE)"
+base="$(tr -d '\r\n' < gateways/litellm/LITELLM_IMAGE)"
 cosign verify "$base" \
   --certificate-identity="https://github.com/BerriAI/project-releaser/.github/workflows/release.yml@refs/heads/main" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" > /dev/null
@@ -12,8 +12,8 @@ echo "signature verified: $base" >&2
 tag="$(git rev-parse --short HEAD)-${GITHUB_RUN_ID:-local}"
 build() {
   case "$1" in
-    gateway) docker build -q --build-arg "LITELLM_IMAGE=$base" -t "$REPO/gateway:$tag" gateway ;;
-    runner) docker build -q --build-arg "SETTINGS_DIR=$SETTINGS_DIR" -t "$REPO/runner:$tag" -f runner/Dockerfile . ;;
+    gateway) docker build -q --build-arg "LITELLM_IMAGE=$base" -t "$REPO/gateway:$tag" gateways/litellm/gateway ;;
+    runner) docker build -q --build-arg "SETTINGS_DIR=$SETTINGS_DIR" -t "$REPO/runner:$tag" -f gateways/litellm/runner/Dockerfile . ;;
     app) docker build -q -t "$REPO/app:$tag" apps ;;
   esac
 }

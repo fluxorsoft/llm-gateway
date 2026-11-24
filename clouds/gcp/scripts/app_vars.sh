@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The example apps' Terraform variables, from the platform's outputs (terraform output -json on stdin).
-#   IMAGE=... PROJECT=... REPO_LOCATION=europe NAME=llmgw MEMBERS='["user:a@example.com"]' scripts/app_vars.sh < outputs.json
+#   IMAGE=... PROJECT=... REPO_LOCATION=europe NAME=llmgw MEMBERS='["user:a@example.com"]' clouds/gcp/scripts/app_vars.sh < outputs.json
 set -euo pipefail
 : "${IMAGE:?}" "${PROJECT:?}" "${REPO_LOCATION:=europe}" "${NAME:=llmgw}" "${MEMBERS:=[]}"
 jq --arg image "$IMAGE" --arg project "$PROJECT" --arg loc "$REPO_LOCATION" --arg name "$NAME" --argjson members "$MEMBERS" '{

@@ -61,31 +61,31 @@ jobs:
         run: |
           gcloud auth configure-docker "$REPO_LOCATION-docker.pkg.dev" --quiet
           none="none@sha256:$(printf '0%.0s' $(seq 64))"
-          jq --arg p "$PROJECT" --arg d "../../$SETTINGS_DIR" --arg n "$none" \
-            '. + {project: $p, settings_dir: $d, images: {gateway: $n, runner: $n, app: $n}}' <<< "$PLATFORM_TFVARS" > terraform/platform/ci.auto.tfvars.json
-          terraform -chdir=terraform/platform init -no-color -backend-config="bucket=$PROJECT-$NAME-tfstate" -backend-config=prefix=platform > /dev/null
-          terraform -chdir=terraform/apps init -no-color -backend-config="bucket=$PROJECT-$NAME-tfstate" -backend-config=prefix=apps > /dev/null
+          jq --arg p "$PROJECT" --arg d "../../../$SETTINGS_DIR" --arg n "$none" \
+            '. + {project: $p, settings_dir: $d, images: {gateway: $n, runner: $n, app: $n}}' <<< "$PLATFORM_TFVARS" > clouds/gcp/platform/ci.auto.tfvars.json
+          terraform -chdir=clouds/gcp/platform init -no-color -backend-config="bucket=$PROJECT-$NAME-tfstate" -backend-config=prefix=platform > /dev/null
+          terraform -chdir=clouds/gcp/apps init -no-color -backend-config="bucket=$PROJECT-$NAME-tfstate" -backend-config=prefix=apps > /dev/null
 
       - name: Verify, build and push the images
         if: contains(fromJSON('["plan", "apply", "settings"]'), inputs.action)
         run: |
           export REPO="$REPO_LOCATION-docker.pkg.dev/$PROJECT/$NAME"
           if [ "${{ inputs.action }}" = settings ]; then # the gateways and apps stay as they are
-            KEEP="$(terraform -chdir=terraform/platform output -json images)" && export KEEP ONLY=runner
+            KEEP="$(terraform -chdir=clouds/gcp/platform output -json images)" && export KEEP ONLY=runner
           fi
           images="$(scripts/images.sh)"
           echo "$images" | jq . | tee -a "$GITHUB_STEP_SUMMARY"
-          jq --argjson i "$images" '.images = $i' terraform/platform/ci.auto.tfvars.json > t && mv t terraform/platform/ci.auto.tfvars.json
+          jq --argjson i "$images" '.images = $i' clouds/gcp/platform/ci.auto.tfvars.json > t && mv t clouds/gcp/platform/ci.auto.tfvars.json
 
       - name: Step 1, plan
         if: contains(fromJSON('["plan", "apply", "settings"]'), inputs.action)
         run: |
-          terraform -chdir=terraform/platform plan -no-color -out=p.tfplan > /tmp/plan.txt || { tail -40 /tmp/plan.txt; exit 1; }
+          terraform -chdir=clouds/gcp/platform plan -no-color -out=p.tfplan > /tmp/plan.txt || { tail -40 /tmp/plan.txt; exit 1; }
           grep -E '^  # |^Plan|^No changes' /tmp/plan.txt | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Step 1, apply
         if: contains(fromJSON('["apply", "settings"]'), inputs.action)
-        run: terraform -chdir=terraform/platform apply -no-color p.tfplan
+        run: terraform -chdir=clouds/gcp/platform apply -no-color p.tfplan
 
       - name: Step 2, LiteLLM settings
         if: contains(fromJSON('["apply", "settings"]'), inputs.action)
@@ -96,14 +96,14 @@ jobs:
         env:
           MEMBERS: ${{ vars.APP_MEMBERS || '[]' }}
         run: |
-          terraform -chdir=terraform/platform output -json > /tmp/out.json
-          IMAGE="$(jq -r .images.app terraform/platform/ci.auto.tfvars.json)" scripts/app_vars.sh < /tmp/out.json > terraform/apps/ci.auto.tfvars.json
-          terraform -chdir=terraform/apps apply -auto-approve -no-color
+          terraform -chdir=clouds/gcp/platform output -json > /tmp/out.json
+          IMAGE="$(jq -r .images.app clouds/gcp/platform/ci.auto.tfvars.json)" clouds/gcp/scripts/app_vars.sh < /tmp/out.json > clouds/gcp/apps/ci.auto.tfvars.json
+          terraform -chdir=clouds/gcp/apps apply -auto-approve -no-color
 
       - name: Checks, as each team
         if: contains(fromJSON('["apply", "checks"]'), inputs.action)
         run: |
-          terraform -chdir=terraform/platform output -json teams | jq -r 'to_entries[] | "\(.key) \(.value.project) \(.value.region)"' | while read -r team project region; do
+          terraform -chdir=clouds/gcp/platform output -json teams | jq -r 'to_entries[] | "\(.key) \(.value.project) \(.value.region)"' | while read -r team project region; do
             gcloud run jobs execute "$team-check" --project="$project" --region="$region" --wait < /dev/null
           done
 
@@ -112,7 +112,7 @@ jobs:
         run: |
           gcloud run jobs execute "$NAME-config" --project="$PROJECT" --region="$REGION" --update-env-vars=MODE=destroy --wait ||
             echo "::warning::step 2 was not destroyed; its database goes with step 1"
-          terraform -chdir=terraform/platform output -json > /tmp/out.json
-          IMAGE=none scripts/app_vars.sh < /tmp/out.json > terraform/apps/ci.auto.tfvars.json || true
-          terraform -chdir=terraform/apps destroy -auto-approve -no-color
-          terraform -chdir=terraform/platform destroy -auto-approve -no-color
+          terraform -chdir=clouds/gcp/platform output -json > /tmp/out.json
+          IMAGE=none clouds/gcp/scripts/app_vars.sh < /tmp/out.json > clouds/gcp/apps/ci.auto.tfvars.json || true
+          terraform -chdir=clouds/gcp/apps destroy -auto-approve -no-color
+          terraform -chdir=clouds/gcp/platform destroy -auto-approve -no-color

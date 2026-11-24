@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Once per gateway project, by someone who owns it and the team projects: APIs, the Terraform state bucket, the image
 # repository, and a keyless identity for GitHub Actions that only this repository's "gateway" environment can use.
-#   PROJECT=... TEAM_PROJECTS="a b" GITHUB_REPO=owner/repo REGION=europe-west2 scripts/bootstrap.sh
+#   PROJECT=... TEAM_PROJECTS="a b" GITHUB_REPO=owner/repo REGION=europe-west2 clouds/gcp/scripts/bootstrap.sh
 set -euo pipefail
 : "${PROJECT:?}" "${TEAM_PROJECTS:?}" "${GITHUB_REPO:?}" "${REGION:=europe-west2}" "${NAME:=llmgw}" "${REPO_LOCATION:=europe}"
 : "${GITHUB_ENVIRONMENT:=gateway}"

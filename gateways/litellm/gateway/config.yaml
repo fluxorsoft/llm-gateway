@@ -1,5 +1,5 @@
 # LiteLLM settings shared by every gateway and the admin service. Models, teams and keys are not here: Terraform puts
-# them in the database (terraform/config).
+# them in the database (gateways/litellm/config).
 model_list: []
 
 litellm_settings:

@@ -1,6 +1,6 @@
 # What each team's project gets: the gateway may predict there, and only the team's app may read the team's key.
 module "settings" {
-  source = "../settings"
+  source = "../../../core/settings"
   dir    = var.settings_dir
 }
 

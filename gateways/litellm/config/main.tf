@@ -1,5 +1,5 @@
 # Step 2: what LiteLLM serves. Models, teams, failover and keys, from the settings files, through the admin service.
-# Runs in the runner (a Cloud Run job inside the VPC); see runner/.
+# Runs in the runner (a Cloud Run job inside the VPC); see gateways/litellm/runner/.
 terraform {
   required_version = ">= 1.11"
   required_providers {
@@ -12,12 +12,12 @@ terraform {
 
 variable "settings_dir" {
   type    = string
-  default = "../../settings/example"
+  default = "../../../settings/example"
 }
 
 variable "admin_url" {
   type    = string
-  default = "http://127.0.0.1:9000" # runner/admin_proxy.py
+  default = "http://127.0.0.1:9000" # gateways/litellm/runner/admin_proxy.py
 }
 
 variable "master_key" {
@@ -32,7 +32,7 @@ provider "litellm" {
 }
 
 module "settings" {
-  source = "../settings"
+  source = "../../../core/settings"
   dir    = var.settings_dir
 }
 

@@ -1,4 +1,4 @@
-# Step 1: the platform. Everything here is Google Cloud; LiteLLM's own settings are in terraform/config.
+# Step 1: the platform. Everything here is Google Cloud; LiteLLM's own settings are in gateways/litellm/config.
 terraform {
   required_version = ">= 1.11"
   required_providers {
@@ -25,7 +25,7 @@ variable "name" {
 
 variable "settings_dir" {
   type    = string
-  default = "../../settings/example"
+  default = "../../../settings/example"
 }
 
 variable "primary_region" {
@@ -61,7 +61,7 @@ variable "certificate_ids" {
 
 variable "images" {
   type        = object({ gateway = string, runner = string, app = string })
-  description = "Images by digest, as scripts/build.sh prints them"
+  description = "Images by digest, as scripts/images.sh prints them"
   validation {
     condition     = alltrue([for i in values(var.images) : can(regex("@sha256:[0-9a-f]{64}$", i))])
     error_message = "Every image must be given by digest (...@sha256:...)."

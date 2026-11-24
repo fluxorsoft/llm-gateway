@@ -69,7 +69,7 @@ def incomplete(answer):
 
 class FullArmor(ModelArmorGuardrail):
     # LiteLLM runs only the hooks it finds in the class itself, not inherited ones: without these lines a streamed answer
-    # would go out unchecked. gateway/tests/integration proves it does not.
+    # would go out unchecked. gateways/litellm/gateway/tests/integration proves it does not.
     async_moderation_hook = ModelArmorGuardrail.async_moderation_hook
     async_post_call_success_hook = ModelArmorGuardrail.async_post_call_success_hook
     async_post_call_streaming_iterator_hook = ModelArmorGuardrail.async_post_call_streaming_iterator_hook

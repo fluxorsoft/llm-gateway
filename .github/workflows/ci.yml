@@ -17,22 +17,22 @@ jobs:
           terraform_version: 1.16.5
           terraform_wrapper: false
       - name: The request filter
-        run: python3 -m unittest discover -s gateway/tests
+        run: python3 -m unittest discover -s gateways/litellm/gateway/tests
       - name: Python and shell are well formed
         run: |
-          python3 -m compileall -q gateway apps runner
-          bash -n scripts/*.sh && sh -n runner/run.sh
+          python3 -m compileall -q gateways apps
+          bash -n scripts/*.sh clouds/gcp/scripts/*.sh && sh -n gateways/litellm/runner/run.sh
       - name: Terraform is formatted and valid
         run: |
-          terraform fmt -check -recursive terraform
-          for d in settings team platform config apps; do
-            terraform -chdir=terraform/$d init -backend=false -input=false > /dev/null
-            terraform -chdir=terraform/$d validate -no-color
+          terraform fmt -check -recursive core clouds gateways
+          for d in core/settings clouds/gcp/team clouds/gcp/platform gateways/litellm/config clouds/gcp/apps; do
+            terraform -chdir=$d init -backend=false -input=false > /dev/null
+            terraform -chdir=$d validate -no-color
           done
       - name: The settings' rules
-        run: terraform -chdir=terraform/settings test -no-color
+        run: terraform -chdir=core/settings test -no-color
       - name: The example settings pass
-        run: terraform -chdir=terraform/settings plan -input=false -no-color -var dir=../../settings/example > /dev/null
+        run: terraform -chdir=core/settings plan -input=false -no-color -var dir=../../settings/example > /dev/null
 
   # the image as it ships, with the real LiteLLM, pretend models and a pretend Model Armor
   gateway:
@@ -43,14 +43,14 @@ jobs:
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - name: Verify and build
         run: |
-          base="$(tr -d '\r\n' < LITELLM_IMAGE)"
+          base="$(tr -d '\r\n' < gateways/litellm/LITELLM_IMAGE)"
           cosign verify "$base" \
             --certificate-identity=https://github.com/BerriAI/project-releaser/.github/workflows/release.yml@refs/heads/main \
             --certificate-oidc-issuer=https://token.actions.githubusercontent.com > /dev/null
-          docker build -q --build-arg "LITELLM_IMAGE=$base" -t gateway:test gateway
+          docker build -q --build-arg "LITELLM_IMAGE=$base" -t gateway:test gateways/litellm/gateway
       - name: Start
         run: |
-          cd gateway/tests/integration
+          cd gateways/litellm/gateway/tests/integration
           python3 fake_google.py > /dev/null 2>&1 &
           docker run -d --name gateway --network host -v "$PWD/config.yaml:/etc/litellm/config.yaml:ro" \
             -e ARMOR_ENDPOINT=http://127.0.0.1:9100 -e GCE_METADATA_HOST=127.0.0.1:9100 -e GCE_METADATA_IP=127.0.0.1:9100 \
@@ -58,7 +58,7 @@ jobs:
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:8080/health/liveliness > /dev/null && exit 0; sleep 2; done
           docker logs gateway | tail -50; exit 1
       - name: Every message, every answer, or no call
-        run: GATEWAY=http://127.0.0.1:8080 GOOGLE=http://127.0.0.1:9100 python3 gateway/tests/integration/test_gateway.py
+        run: GATEWAY=http://127.0.0.1:8080 GOOGLE=http://127.0.0.1:9100 python3 gateways/litellm/gateway/tests/integration/test_gateway.py
       - name: What the gateway said
         if: failure()
         run: docker logs gateway | tail -80

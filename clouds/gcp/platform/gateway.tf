@@ -1,4 +1,4 @@
-# The gateways (one per region), the admin service, the migration job, and the runner that applies terraform/config.
+# The gateways (one per region), the admin service, the migration job, and the runner that applies gateways/litellm/config.
 resource "google_service_account" "gateway" {
   account_id   = "${var.name}-gateway"
   display_name = "LLM gateway: calls models, predict only"

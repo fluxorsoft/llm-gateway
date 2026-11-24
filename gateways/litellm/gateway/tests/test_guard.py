@@ -1,4 +1,4 @@
-"""The filter, without LiteLLM: python -m unittest discover -s gateway/tests"""
+"""The filter, without LiteLLM: python -m unittest discover -s gateways/litellm/gateway/tests"""
 import asyncio
 import json
 import sys
