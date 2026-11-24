@@ -59,7 +59,7 @@ for p in $TEAM_PROJECTS; do
   done
 done
 echo
-echo "Set these as variables of the repository's '$GITHUB_ENVIRONMENT' environment:"
+if [ -n "$GITHUB_ENVIRONMENT" ]; then echo "Set these as variables of the repository's '$GITHUB_ENVIRONMENT' environment:"; else echo "Set these as variables of the repository:"; fi
 echo "  GCP_PROJECT=$PROJECT"
 echo "  GCP_IDENTITY=$deployer"
 echo "  GCP_PROVIDER=projects/$number/locations/global/workloadIdentityPools/$NAME-github/providers/github"
