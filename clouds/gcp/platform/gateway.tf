@@ -469,3 +469,72 @@ resource "google_cloud_scheduler_job" "budgets" {
   }
   depends_on = [google_cloud_run_v2_job_iam_member.budgets]
 }
+
+# ---- the price check: every Monday, the gateway's cost figures against the bill -----------------------------------------
+locals {
+  billing_parts = var.price_check == null ? [] : split(".", var.price_check.billing_export)
+}
+
+check "billing_export" {
+  assert {
+    condition     = var.price_check == null || length(local.billing_parts) == 3
+    error_message = "price_check.billing_export is project.dataset.table."
+  }
+}
+
+resource "google_project_iam_member" "runner_bigquery" {
+  count   = var.price_check != null && var.usage_bigquery ? 1 : 0
+  project = var.project
+  role    = "roles/bigquery.jobUser"
+  member  = "serviceAccount:${google_service_account.runner.email}"
+}
+
+resource "google_bigquery_dataset_iam_member" "runner_usage" {
+  count      = var.price_check != null && var.usage_bigquery ? 1 : 0
+  dataset_id = google_bigquery_dataset.usage[0].dataset_id
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.runner.email}"
+}
+
+resource "google_bigquery_dataset_iam_member" "runner_billing" {
+  count      = var.price_check != null && var.usage_bigquery ? 1 : 0
+  project    = local.billing_parts[0]
+  dataset_id = local.billing_parts[1]
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.runner.email}"
+}
+
+resource "google_service_account" "pricecheck" {
+  count      = var.price_check != null && var.usage_bigquery ? 1 : 0
+  account_id = "${var.name}-pricecheck"
+}
+
+resource "google_cloud_run_v2_job_iam_member" "pricecheck" {
+  count    = var.price_check != null && var.usage_bigquery ? 1 : 0
+  name     = google_cloud_run_v2_job.runner.name
+  location = var.primary_region
+  role     = "roles/run.jobsExecutorWithOverrides"
+  member   = "serviceAccount:${google_service_account.pricecheck[0].email}"
+}
+
+resource "google_cloud_scheduler_job" "pricecheck" {
+  count    = var.price_check != null && var.usage_bigquery ? 1 : 0
+  name     = "${var.name}-pricecheck"
+  region   = var.primary_region
+  schedule = "0 7 * * 1"
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project}/locations/${var.primary_region}/jobs/${google_cloud_run_v2_job.runner.name}:run"
+    body = base64encode(jsonencode({ overrides = { containerOverrides = [{ env = [
+      { name = "MODE", value = "pricecheck" },
+      { name = "USAGE_DATASET", value = "${var.project}.${google_bigquery_dataset.usage[0].dataset_id}" },
+      { name = "BILLING_EXPORT", value = var.price_check.billing_export },
+      { name = "PRICE_CHECK_ABOVE", value = tostring(var.price_check.above) },
+    ] }] } }))
+    headers = { "Content-Type" = "application/json" }
+    oauth_token {
+      service_account_email = google_service_account.pricecheck[0].email
+    }
+  }
+  depends_on = [google_cloud_run_v2_job_iam_member.pricecheck]
+}

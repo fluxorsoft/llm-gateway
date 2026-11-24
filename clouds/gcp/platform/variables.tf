@@ -65,6 +65,15 @@ variable "budget_alerts" {
   description = "Every hour, tell each team's owner (and alert_email) when the team has spent 80 and 100 per cent of its monthly budget"
 }
 
+variable "price_check" {
+  type = object({
+    billing_export = string               # the Cloud Billing export table, project.dataset.table (a billing admin turns the export on)
+    above          = optional(number, 10) # alert when the two differ by more than this many per cent
+  })
+  default     = null
+  description = "Every Monday, compare last week's gateway cost per team project with Google's bill for Vertex AI"
+}
+
 variable "spend_log_days" {
   type        = number
   default     = null

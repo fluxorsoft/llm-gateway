@@ -172,3 +172,22 @@ resource "google_monitoring_alert_policy" "budget" {
     auto_close = "604800s"
   }
 }
+
+resource "google_monitoring_alert_policy" "price_check" {
+  count                 = var.price_check != null && var.usage_bigquery ? 1 : 0
+  display_name          = "${var.name}: the gateway's costs differ from the bill"
+  combiner              = "OR"
+  notification_channels = local.channels
+  conditions {
+    display_name = "price check drift"
+    condition_matched_log {
+      filter = "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"${var.name}-config\" AND jsonPayload.message=\"llm price check\" AND jsonPayload.level=\"drift\""
+    }
+  }
+  alert_strategy {
+    notification_rate_limit {
+      period = "86400s"
+    }
+    auto_close = "604800s"
+  }
+}
