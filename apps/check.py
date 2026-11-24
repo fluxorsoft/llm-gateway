@@ -148,8 +148,8 @@ def chat_load():
             else:
                 s, _b, _h = chat(max_tokens=300)
                 status = s
-        except Exception as e:
-            status = getattr(e, "code", 0) or 0
+        except Exception as e:  # a refused stream raises without a code: read it from the message
+            status = getattr(e, "code", 0) or next((c for c in (429, 422, 401, 403, 400, 500, 503) if str(c) in str(e)), 0)
         with lock:
             results.append((streamed, status, time.time() - t, first))
 
