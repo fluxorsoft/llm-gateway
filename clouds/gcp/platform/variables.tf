@@ -59,6 +59,20 @@ variable "certificate_ids" {
   description = "Certificate Manager certificates (scope ALL_REGIONS) for the domain. Empty makes a private CA: for trials"
 }
 
+variable "developer_door" {
+  type = object({
+    domain    = optional(string)            # default: dev.<domain>
+    always_on = optional(string, "primary") # primary: one copy always running in the primary region; all; none (starts on demand)
+    maximum   = optional(number, 1)         # instances per region; each opens up to 5 database connections
+  })
+  default     = null
+  description = "A second door for developers' coding tools: streams answers as they come, speaks the Responses and Gemini APIs"
+  validation {
+    condition     = var.developer_door == null || contains(["primary", "all", "none"], try(var.developer_door.always_on, "primary"))
+    error_message = "developer_door.always_on is primary, all or none."
+  }
+}
+
 variable "budget_alerts" {
   type        = bool
   default     = false

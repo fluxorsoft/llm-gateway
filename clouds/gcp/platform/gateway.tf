@@ -29,13 +29,14 @@ locals {
   services = merge(
     { for r in keys(var.regions) : "gateway-${r}" => { role = "gateway", region = r, sa = google_service_account.gateway.email } },
     { admin = { role = "admin", region = var.primary_region, sa = google_service_account.admin.email } },
+    { for r in local.door_regions : "developer-${r}" => { role = "developer", region = r, sa = google_service_account.gateway.email } },
   )
   # the platform's switches for LiteLLM's own config, laid over it when the gateway starts (onedoorai.litellm.guard)
   gateway_settings = merge(
     var.spend_log_days == null ? {} : { general_settings = { maximum_spend_logs_retention_period = "${var.spend_log_days}d" } },
   )
   environment = {
-    for k, s in local.services : k => merge(length(local.gateway_settings) == 0 ? {} : { GATEWAY_SETTINGS = jsonencode(local.gateway_settings) }, {
+    for k, s in local.services : k => merge(length(local.gateway_settings) == 0 ? {} : { GATEWAY_SETTINGS = jsonencode(local.gateway_settings) }, s.role == "developer" ? { GATEWAY_DOOR = "developers" } : {}, {
       GATEWAY_ROLE                                                                                        = s.role
       ARMOR_PROJECT                                                                                       = var.project
       ARMOR_TEMPLATE                                                                                      = google_model_armor_template.this[s.region].template_id

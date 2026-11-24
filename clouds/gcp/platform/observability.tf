@@ -10,7 +10,7 @@ resource "google_logging_project_sink" "usage" {
   count                  = var.usage_bigquery ? 1 : 0
   name                   = "${var.name}-usage"
   destination            = "bigquery.googleapis.com/${google_bigquery_dataset.usage[0].id}"
-  filter                 = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${var.name}-gateway\" AND jsonPayload.message=\"llm usage\""
+  filter                 = local.door_on ? "resource.type=\"cloud_run_revision\" AND (resource.labels.service_name=\"${var.name}-gateway\" OR resource.labels.service_name=\"${var.name}-developer\") AND jsonPayload.message=\"llm usage\"" : "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${var.name}-gateway\" AND jsonPayload.message=\"llm usage\""
   unique_writer_identity = true
   bigquery_options {
     use_partitioned_tables = true

@@ -51,7 +51,7 @@ resource "google_sql_database_instance" "this" {
   lifecycle {
     precondition {
       # 5 connections per instance (gateways/litellm/gateway/config.yaml): every gateway at its maximum, the admin service, one migration
-      condition     = 5 * (length(var.regions) * var.size.gateway_maximum + 1) + 5 <= var.size.db_connections
+      condition     = 5 * (length(var.regions) * var.size.gateway_maximum + length(local.door_regions) * try(var.developer_door.maximum, 1) + 1) + 5 <= var.size.db_connections
       error_message = "The gateways can open more connections than the database allows: lower gateway_maximum or raise db_tier and db_connections."
     }
   }

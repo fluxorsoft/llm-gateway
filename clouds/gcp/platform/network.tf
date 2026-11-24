@@ -74,6 +74,35 @@ resource "google_compute_url_map" "this" {
     hosts        = [var.domain]
     path_matcher = "inference"
   }
+  dynamic "host_rule" {
+    for_each = local.door_on ? [local.door_domain] : []
+    content {
+      hosts        = [host_rule.value]
+      path_matcher = "developers"
+    }
+  }
+  dynamic "path_matcher" {
+    for_each = local.door_on ? [1] : []
+    content {
+      name = "developers"
+      default_route_action {
+        weighted_backend_services {
+          backend_service = google_compute_backend_service.developer[0].id
+          weight          = 100
+        }
+        fault_injection_policy {
+          abort {
+            http_status = 404
+            percentage  = 100
+          }
+        }
+      }
+      path_rule {
+        paths   = ["/v1/chat/completions", "/v1/responses", "/v1/models", "/v1beta/models/*"]
+        service = google_compute_backend_service.developer[0].id
+      }
+    }
+  }
   path_matcher {
     name = "inference"
     default_route_action {
@@ -189,7 +218,7 @@ resource "tls_private_key" "front" {
 resource "tls_cert_request" "front" {
   count           = local.private_ca ? 1 : 0
   private_key_pem = tls_private_key.front[0].private_key_pem
-  dns_names       = [var.domain]
+  dns_names       = local.door_on ? [var.domain, local.door_domain] : [var.domain]
   subject {
     common_name = var.domain
   }
