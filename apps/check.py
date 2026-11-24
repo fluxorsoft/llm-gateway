@@ -129,6 +129,52 @@ def load():
                       "p50_ms": round(times[len(times) // 2] * 1000), "p95_ms": round(times[int(len(times) * .95)] * 1000)}), flush=True)
 
 
-{"all": all_checks, "failover": watch, "load": load}[os.environ.get("CHECKS", "all")]()
+def chat_load():
+    """Real chat calls, whole and streamed, at a fixed rate: LOAD_SECONDS, LOAD_PER_SECOND (default 60 s at 2 a second).
+    Short answers keep the cost to pennies. Reports the time to a whole answer and to the first streamed words."""
+    import threading
+    seconds, rate = int(os.environ.get("LOAD_SECONDS", "60")), float(os.environ.get("LOAD_PER_SECOND", "2"))
+    ask_ = [{"role": "user", "content": "Reply with the single word OK"}]
+    results, lock, threads = [], threading.Lock(), []
+
+    def one(streamed):
+        t, first, status = time.time(), None, 0
+        try:
+            if streamed:
+                for piece in llm.stream(MODEL, ask_, max_tokens=300):
+                    if piece and first is None:
+                        first = time.time() - t
+                status = 200
+            else:
+                s, _b, _h = chat(max_tokens=300)
+                status = s
+        except Exception as e:
+            status = getattr(e, "code", 0) or 0
+        with lock:
+            results.append((streamed, status, time.time() - t, first))
+
+    start, i = time.time(), 0
+    while time.time() - start < seconds:
+        th = threading.Thread(target=one, args=(i % 2 == 1,))
+        th.start()
+        threads.append(th)
+        i += 1
+        time.sleep(max(0.0, start + i / rate - time.time()))
+    [t.join() for t in threads]
+
+    def pct(xs, p):
+        xs = sorted(xs)
+        return round(xs[min(len(xs) - 1, int(len(xs) * p))] * 1000) if xs else None
+    whole = [r[2] for r in results if not r[0] and r[1] == 200]
+    first = [r[3] for r in results if r[0] and r[1] == 200 and r[3] is not None]
+    codes = {}
+    for r in results:
+        codes[r[1]] = codes.get(r[1], 0) + 1
+    print(json.dumps({"message": "CHAT LOAD", "calls": len(results), "per_second": rate, "seconds": seconds, "codes": codes,
+                      "whole_p50_ms": pct(whole, .5), "whole_p95_ms": pct(whole, .95),
+                      "stream_first_words_p50_ms": pct(first, .5), "stream_first_words_p95_ms": pct(first, .95)}), flush=True)
+
+
+{"all": all_checks, "failover": watch, "load": load, "chat-load": chat_load}[os.environ.get("CHECKS", "all")]()
 print(json.dumps({"message": "CHECKS DONE", "failed": failed}), flush=True)
 sys.exit(1 if failed else 0)
