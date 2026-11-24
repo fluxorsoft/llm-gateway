@@ -20,11 +20,14 @@ from litellm.types.guardrails import GuardrailEventHooks
 # text that is still too long comes back as a skipped filter, and is refused too.
 MAX_TEXT = int(os.environ.get("ARMOR_MAX_CHARACTERS", "120000"))
 WITH_NAMES = ("tools", "tool_choice", "response_format")  # property names are the caller's words too
-FIELDS = ("messages", "input", "stop", *WITH_NAMES)
+FIELDS = ("messages", "input", "instructions", "contents", "systemInstruction", "stop", *WITH_NAMES)
+OPAQUE = {"thoughtSignature", "encrypted_content"}  # not text: signatures and sealed reasoning that the tool sends back
 
 
 # the fixed words of the format, which would only be noise in a check; anything else in these fields is read
-FORMAT = {"role": {"system", "developer", "user", "assistant", "tool"}, "type": {"text", "function"}}
+FORMAT = {"role": {"system", "developer", "user", "assistant", "tool", "model"},
+          "type": {"text", "function", "message", "function_call", "function_call_output", "input_text", "output_text",
+                   "reasoning", "namespace"}}
 
 
 def words(value, names=False):
@@ -35,6 +38,8 @@ def words(value, names=False):
         for k, v in value.items():
             if names:
                 yield str(k)
+            if k in OPAQUE:
+                continue
             if not (isinstance(v, str) and v in FORMAT.get(k, ())):
                 yield from words(v, names)
     elif isinstance(value, (list, tuple)) and value and all(isinstance(v, dict) and v.get("type") == "text" for v in value):

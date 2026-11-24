@@ -14,6 +14,7 @@ A LiteLLM hook cannot do this: LiteLLM has already changed the body when a hook 
 """
 import json
 import os
+import re
 
 CHAT = {"model", "messages", "stream", "stream_options", "temperature", "top_p", "max_tokens",
         "max_completion_tokens", "stop", "n", "seed", "tools", "tool_choice", "parallel_tool_calls",
@@ -29,6 +30,23 @@ PATHS = {("POST", "/v1/chat/completions"): CHAT,
 
 KEEP_HEADERS = {b"authorization", b"accept", b"host", b"user-agent", b"x-request-id", b"traceparent",
                 b"x-cloud-trace-context"}
+
+# ---- the developers' door (GATEWAY_ROLE=developer): what coding tools send, recorded from Codex CLI and Gemini CLI --------
+RESPONSES = {"model", "input", "instructions", "stream", "tools", "tool_choice", "parallel_tool_calls", "reasoning",
+             "include", "store", "prompt_cache_key", "client_metadata", "temperature", "top_p", "max_output_tokens", "text"}
+GEMINI = {"contents", "generationConfig", "systemInstruction", "tools", "toolConfig"}
+DEVELOPER_PATHS = {**PATHS, ("POST", "/v1/responses"): RESPONSES}
+GEMINI_PATH = re.compile(r"^/v1beta/models/[A-Za-z0-9.\-]{1,80}:(streamGenerateContent|generateContent)$")
+DEVELOPER_HEADERS = KEEP_HEADERS | {b"x-goog-api-key"}
+
+
+def route(role, method, path, query):
+    """The fields a request may carry, None for no body, or False: not here. And why a query string is refused, if it is."""
+    if role != "developer":
+        return PATHS.get((method, path), False), ("query parameters are not allowed" if query else None)
+    if method == "POST" and GEMINI_PATH.match(path):
+        return GEMINI, (None if query in (b"", b"alt=sse") else "only alt=sse is allowed")
+    return DEVELOPER_PATHS.get((method, path), False), ("query parameters are not allowed" if query else None)
 MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", "10000000"))
 
 
@@ -48,6 +66,36 @@ def function_call(c):
     return (only(c, "id", "type", "function", "index") and c.get("type", "function") == "function"
             and only(c.get("function"), "name", "arguments")
             and all(isinstance(v, str) for v in c["function"].values()))
+
+
+def developer_shape(data):
+    """The developers' door: the Responses API and the Gemini API, text and the tool's own functions only."""
+    tools = data.get("tools")
+    if "input" in data and "contents" not in data or "instructions" in data:  # the Responses API
+        given = data.get("input")
+        if given is not None and not isinstance(given, str):
+            if not isinstance(given, list):
+                return "input is text or a list of items"
+            for item in given:
+                kind = item.get("type", "message") if isinstance(item, dict) else None
+                if kind not in ("message", "function_call", "function_call_output", "reasoning"):
+                    return "input items are messages, function calls and their outputs"
+                if kind == "message" and not (isinstance(item.get("content"), str) or all(
+                        isinstance(p, dict) and p.get("type") in ("input_text", "output_text") for p in item.get("content") or [])):
+                    return "a message's content is text"
+        if tools is not None and not (isinstance(tools, list) and all(
+                isinstance(t, dict) and (t.get("type") == "function" or (
+                    t.get("type") == "namespace" and all(isinstance(x, dict) and x.get("type") == "function" for x in t.get("tools") or [])))
+                for t in tools)):
+            return "tools are the tool's own functions (turn the provider's web search off)"
+        return None
+    for c in data.get("contents") or []:  # the Gemini API
+        for p in (c.get("parts") or []) if isinstance(c, dict) else [None]:
+            if not (isinstance(p, dict) and set(p) <= {"text", "functionCall", "functionResponse", "thought", "thoughtSignature"}):
+                return "parts are text, function calls and their responses"
+    if tools is not None and not (isinstance(tools, list) and all(isinstance(t, dict) and set(t) == {"functionDeclarations"} for t in tools)):
+        return "tools are the tool's own functions"
+    return None
 
 
 def shape(data):
@@ -92,14 +140,16 @@ class Filter:
             return await self.app(scope, receive, send)
         if scope["type"] != "http":  # no websockets
             return await send({"type": "websocket.close", "code": 1008})
-        fields = PATHS.get((scope["method"], scope["path"]), False)
+        role = os.environ.get("GATEWAY_ROLE", "gateway")
+        fields, query_refused = route(role, scope["method"], scope["path"], scope.get("query_string") or b"")
         if fields is False:
             return await refuse(send, 404, "not found")
-        if scope.get("query_string"):
-            return await refuse(send, 400, "query parameters are not allowed")
+        if query_refused:
+            return await refuse(send, 400, query_refused)
         if any(k == b"content-encoding" for k, _ in scope["headers"]):
             return await refuse(send, 415, "compressed bodies are not allowed")
-        headers = [(k, v) for k, v in scope["headers"] if k in KEEP_HEADERS]
+        keep = DEVELOPER_HEADERS if role == "developer" else KEEP_HEADERS
+        headers = [(k, v) for k, v in scope["headers"] if k in keep]
 
         body = b""
         if fields is not None:
@@ -121,7 +171,7 @@ class Filter:
             bad = sorted(set(data) - fields)
             if bad:
                 return await refuse(send, 400, "fields not allowed: " + ", ".join(bad)[:300])
-            wrong = shape(data)
+            wrong = developer_shape(data) if role == "developer" and fields is not CHAT and fields is not EMBEDDINGS else shape(data)
             if wrong:
                 return await refuse(send, 400, "not allowed: " + wrong)
             body = json.dumps(data).encode()
@@ -160,7 +210,8 @@ def settings_from_environment(argv, environ=os.environ, folder="/tmp"):
     """The platform's switches reach LiteLLM's config without a new image: GATEWAY_SETTINGS (JSON) is laid over the config
     named by --config, and a working copy is used instead. Without GATEWAY_SETTINGS nothing changes."""
     extra = environ.get("GATEWAY_SETTINGS")
-    if not extra or "--config" not in argv:
+    developer = environ.get("GATEWAY_ROLE") == "developer"
+    if not (extra or developer) or "--config" not in argv:
         return argv
     import yaml
 
@@ -169,7 +220,11 @@ def settings_from_environment(argv, environ=os.environ, folder="/tmp"):
         config = yaml.safe_load(f) or {}
     copy = os.path.join(folder, "gateway-config.yaml")
     with open(copy, "w") as f:
-        yaml.safe_dump(merged(config, json.loads(extra)), f, sort_keys=False)
+        config = merged(config, json.loads(extra or "{}"))
+        if developer:  # coding tools need words as they come: questions are checked, answers are not held
+            for g in config.get("guardrails") or []:
+                g.setdefault("litellm_params", {})["mode"] = ["pre_call"]
+        yaml.safe_dump(config, f, sort_keys=False)
     # LiteLLM loads custom code (armor.FullArmor, usage.usage) from the config's folder: keep it findable
     import sys
 
@@ -183,11 +238,11 @@ def main():
 
     sys.argv = settings_from_environment(sys.argv)
     role = os.environ.get("GATEWAY_ROLE", "gateway")
-    if role not in ("gateway", "admin"):
-        raise SystemExit(f"GATEWAY_ROLE is {role!r}: use gateway or admin")
+    if role not in ("gateway", "developer", "admin"):
+        raise SystemExit(f"GATEWAY_ROLE is {role!r}: use gateway, developer or admin")
     from litellm.proxy.proxy_server import app
 
-    if role == "gateway":
+    if role in ("gateway", "developer"):
         app.add_middleware(Filter)
     from litellm import run_server
 

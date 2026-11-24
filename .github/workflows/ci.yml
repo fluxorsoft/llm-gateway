@@ -74,10 +74,15 @@ jobs:
           docker run -d --name gateway --network host -v "$PWD/config.yaml:/etc/litellm/config.yaml:ro" \
             -e ARMOR_ENDPOINT=http://127.0.0.1:9100 -e GCE_METADATA_HOST=127.0.0.1:9100 -e GCE_METADATA_IP=127.0.0.1:9100 \
             -e LITELLM_MASTER_KEY=sk-test             -e GATEWAY_SETTINGS='{"litellm_settings": {"request_timeout": 600}}' gateway:test
-          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8080/health/liveliness > /dev/null && exit 0; sleep 2; done
-          docker logs gateway | tail -50; exit 1
+          docker run -d --name developer --network host -v "$PWD/config.yaml:/etc/litellm/config.yaml:ro"             -e ARMOR_ENDPOINT=http://127.0.0.1:9100 -e GCE_METADATA_HOST=127.0.0.1:9100 -e GCE_METADATA_IP=127.0.0.1:9100             -e LITELLM_MASTER_KEY=sk-test -e GATEWAY_ROLE=developer gateway:test             --config /etc/litellm/config.yaml --port 8081 --num_workers 1
+          for p in 8080 8081; do
+            for i in $(seq 1 60); do curl -sf http://127.0.0.1:$p/health/liveliness > /dev/null && break; sleep 2; done
+            curl -sf http://127.0.0.1:$p/health/liveliness > /dev/null || { docker logs gateway | tail -30; docker logs developer | tail -30; exit 1; }
+          done
       - name: Every message, every answer, or no call
         run: GATEWAY=http://127.0.0.1:8080 GOOGLE=http://127.0.0.1:9100 python3 gateways/litellm/gateway/tests/integration/test_gateway.py
+      - name: The developers' door
+        run: GATEWAY=http://127.0.0.1:8080 DEVELOPER=http://127.0.0.1:8081 GOOGLE=http://127.0.0.1:9100 python3 gateways/litellm/gateway/tests/integration/test_developer_door.py
       - name: What the gateway said
         if: failure()
-        run: docker logs gateway | tail -80
+        run: docker logs gateway | tail -60; docker logs developer | tail -60
