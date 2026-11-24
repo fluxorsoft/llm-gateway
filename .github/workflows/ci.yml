@@ -17,7 +17,9 @@ jobs:
           terraform_version: 1.16.5
           terraform_wrapper: false
       - name: The request filter
-        run: python3 -m unittest discover -s gateways/litellm/gateway/tests
+        run: |
+          python3 -m pip install -q pyyaml==6.0.2
+          python3 -m unittest discover -s gateways/litellm/gateway/tests
       - name: The key step
         run: python3 -m unittest discover -s tests
       - name: The onedoorai package builds, installs and runs
@@ -67,7 +69,7 @@ jobs:
           python3 fake_google.py > /dev/null 2>&1 &
           docker run -d --name gateway --network host -v "$PWD/config.yaml:/etc/litellm/config.yaml:ro" \
             -e ARMOR_ENDPOINT=http://127.0.0.1:9100 -e GCE_METADATA_HOST=127.0.0.1:9100 -e GCE_METADATA_IP=127.0.0.1:9100 \
-            -e LITELLM_MASTER_KEY=sk-test gateway:test
+            -e LITELLM_MASTER_KEY=sk-test             -e GATEWAY_SETTINGS='{"litellm_settings": {"request_timeout": 600}}' gateway:test
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:8080/health/liveliness > /dev/null && exit 0; sleep 2; done
           docker logs gateway | tail -50; exit 1
       - name: Every message, every answer, or no call

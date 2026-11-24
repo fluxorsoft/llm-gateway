@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-from onedoorai.litellm.guard import Filter  # noqa: E402
+from onedoorai.litellm.guard import Filter, merged, settings_from_environment  # noqa: E402
 
 OK = {"model": "m", "messages": [{"role": "user", "content": "hello"}]}
 
@@ -110,6 +110,31 @@ class GuardTest(unittest.TestCase):
     def test_a_body_in_pieces_is_read_whole(self):
         raw = json.dumps({**OK, "vertex_project": "x"}).encode()
         self.assertEqual(call(chunks=[raw[:20], raw[20:]])[0], 400)
+
+
+class SettingsFromEnvironmentTest(unittest.TestCase):
+    def test_without_settings_nothing_changes(self):
+        argv = ["guard", "--config", "/etc/litellm/config.yaml"]
+        self.assertEqual(settings_from_environment(argv, environ={}), argv)
+
+    def test_settings_are_laid_over_a_working_copy(self):
+        import tempfile
+        import yaml
+        d = tempfile.mkdtemp()
+        with open(f"{d}/config.yaml", "w") as f:
+            yaml.safe_dump({"general_settings": {"master_key": "m", "keep": 1}, "litellm_settings": {"a": 1}}, f)
+        extra = {"general_settings": {"maximum_spend_logs_retention_period": "30d"}}
+        argv = settings_from_environment(["guard", "--config", f"{d}/config.yaml", "--port", "8080"],
+                                         environ={"GATEWAY_SETTINGS": json.dumps(extra)}, folder=d)
+        self.assertEqual(argv[2], f"{d}/gateway-config.yaml")
+        self.assertEqual(argv[3:], ["--port", "8080"])
+        got = yaml.safe_load(open(argv[2]))
+        self.assertEqual(got["general_settings"], {"master_key": "m", "keep": 1, "maximum_spend_logs_retention_period": "30d"})
+        self.assertEqual(got["litellm_settings"], {"a": 1})
+        self.assertIn(d, sys.path)
+
+    def test_merge_goes_key_by_key(self):
+        self.assertEqual(merged({"a": {"b": 1, "c": 2}, "d": 3}, {"a": {"c": 9}}), {"a": {"b": 1, "c": 9}, "d": 3})
 
 
 if __name__ == "__main__":

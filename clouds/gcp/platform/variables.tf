@@ -59,6 +59,16 @@ variable "certificate_ids" {
   description = "Certificate Manager certificates (scope ALL_REGIONS) for the domain. Empty makes a private CA: for trials"
 }
 
+variable "spend_log_days" {
+  type        = number
+  default     = null
+  description = "Delete LiteLLM's spend rows older than this many days (BigQuery keeps the usage record). Null keeps them all"
+  validation {
+    condition     = var.spend_log_days == null || try(var.spend_log_days >= 1, false)
+    error_message = "spend_log_days is 1 or more, or null."
+  }
+}
+
 variable "canary" {
   type = object({
     region  = string # a gateway region other than the primary one

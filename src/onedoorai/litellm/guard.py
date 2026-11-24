@@ -148,7 +148,40 @@ async def refuse(send, code, why):
     await send({"type": "http.response.body", "body": body})
 
 
+def merged(base, extra):
+    """base with extra laid over it, key by key; extra's values win."""
+    out = dict(base)
+    for k, v in extra.items():
+        out[k] = merged(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+def settings_from_environment(argv, environ=os.environ, folder="/tmp"):
+    """The platform's switches reach LiteLLM's config without a new image: GATEWAY_SETTINGS (JSON) is laid over the config
+    named by --config, and a working copy is used instead. Without GATEWAY_SETTINGS nothing changes."""
+    extra = environ.get("GATEWAY_SETTINGS")
+    if not extra or "--config" not in argv:
+        return argv
+    import yaml
+
+    i = argv.index("--config") + 1
+    with open(argv[i]) as f:
+        config = yaml.safe_load(f) or {}
+    copy = os.path.join(folder, "gateway-config.yaml")
+    with open(copy, "w") as f:
+        yaml.safe_dump(merged(config, json.loads(extra)), f, sort_keys=False)
+    # LiteLLM loads custom code (armor.FullArmor, usage.usage) from the config's folder: keep it findable
+    import sys
+
+    if os.path.dirname(argv[i]) not in sys.path:
+        sys.path.insert(0, os.path.dirname(argv[i]))
+    return argv[:i] + [copy] + argv[i + 1:]
+
+
 def main():
+    import sys
+
+    sys.argv = settings_from_environment(sys.argv)
     role = os.environ.get("GATEWAY_ROLE", "gateway")
     if role not in ("gateway", "admin"):
         raise SystemExit(f"GATEWAY_ROLE is {role!r}: use gateway or admin")

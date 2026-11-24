@@ -30,17 +30,21 @@ locals {
     { for r in keys(var.regions) : "gateway-${r}" => { role = "gateway", region = r, sa = google_service_account.gateway.email } },
     { admin = { role = "admin", region = var.primary_region, sa = google_service_account.admin.email } },
   )
+  # the platform's switches for LiteLLM's own config, laid over it when the gateway starts (onedoorai.litellm.guard)
+  gateway_settings = merge(
+    var.spend_log_days == null ? {} : { general_settings = { maximum_spend_logs_retention_period = "${var.spend_log_days}d" } },
+  )
   environment = {
-    for k, s in local.services : k => {
-      GATEWAY_ROLE       = s.role
-      ARMOR_PROJECT      = var.project
-      ARMOR_TEMPLATE     = google_model_armor_template.this[s.region].template_id
-      ARMOR_LOCATION     = s.region
-      REDIS_HOST         = google_redis_instance.this[s.region].host
-      REDIS_PORT         = tostring(google_redis_instance.this[s.region].port)
-      REDIS_SSL          = "True"
-      REDIS_SSL_CA_CERTS = "/etc/redis/ca.pem"
-    }
+    for k, s in local.services : k => merge(length(local.gateway_settings) == 0 ? {} : { GATEWAY_SETTINGS = jsonencode(local.gateway_settings) }, {
+      GATEWAY_ROLE                                                                                        = s.role
+      ARMOR_PROJECT                                                                                       = var.project
+      ARMOR_TEMPLATE                                                                                      = google_model_armor_template.this[s.region].template_id
+      ARMOR_LOCATION                                                                                      = s.region
+      REDIS_HOST                                                                                          = google_redis_instance.this[s.region].host
+      REDIS_PORT                                                                                          = tostring(google_redis_instance.this[s.region].port)
+      REDIS_SSL                                                                                           = "True"
+      REDIS_SSL_CA_CERTS                                                                                  = "/etc/redis/ca.pem"
+    })
   }
   secret_environment = {
     for k, s in local.services : k => {
