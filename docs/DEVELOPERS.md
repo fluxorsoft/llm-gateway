@@ -46,7 +46,7 @@ tool_models:                        # the names the tools ask for, each one of t
 ```
 
 Each person gets a key of their own, named `<team>.<handle>` (`eng.ann-lee`), in a secret only they can read:
-`llm-key-<handle>` in the team's project. The plan refuses a tool whose names are not all mapped, and a name that points
+`llm-key-<handle>` in the team's project. A member may also be a service account (a shared development machine): its address is its id. The plan refuses a tool whose names are not all mapped, and a name that points
 anywhere but the team's own models. (LiteLLM's team aliases are not limited by a key's model list, so these rules are what
 keep a team to its own models.)
 

@@ -159,12 +159,17 @@ resource "google_secret_manager_secret" "person" {
   depends_on = [google_project_service.this]
 }
 
+locals {
+  member_id = { for m in var.members : m.handle => m.id }
+}
+
 resource "google_secret_manager_secret_iam_member" "person" {
   for_each  = google_secret_manager_secret.person
   project   = var.project
   secret_id = each.value.id
   role      = "roles/secretmanager.secretAccessor"
-  member    = "user:${[for m in var.members : m.id if m.handle == each.key][0]}"
+  # a person, or a machine of theirs (a service account: a shared development machine, or a test)
+  member = format("%s:%s", endswith(local.member_id[each.key], ".gserviceaccount.com") ? "serviceAccount" : "user", local.member_id[each.key])
 }
 
 resource "google_secret_manager_secret_iam_member" "person_runner" {
