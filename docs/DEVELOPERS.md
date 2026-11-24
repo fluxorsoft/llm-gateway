@@ -17,8 +17,9 @@ In `settings/platform.json` (or `PLATFORM_TFVARS`):
 ```
 
 The door's address is `https://dev.<domain>` (or `developer_door.domain`). One copy stays running in the primary region; the
-other region starts on demand. `always_on: "all"` keeps one in each region; `"none"` starts on demand everywhere, with a wait
-of tens of seconds on the first call after a quiet spell.
+other region starts on demand. `always_on: "all"` keeps one in each region; `"none"` starts on demand everywhere. A region
+starting on demand makes the first call after a quiet spell wait about a minute (measured: 71 s, of which LiteLLM's own
+start was about 61 s; the next call 1.9 s); `"all"` avoids it for about the price of one more running copy.
 
 ## 2. The catalogue lists the tools
 
