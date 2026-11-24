@@ -65,7 +65,8 @@ LiteLLM's team model aliases are not limited by a key's models, so the settings'
 1. Read the release notes. Move the deploy into an onboarding repository, or keep it here.
 2. Run `plan`: only the images change, and the 1.0.0 keys and their secret versions show as "will no longer be managed".
 3. Run `apply`. The settings step forgets the keys (`removed`, never destroyed) and the key step adopts them by name.
-4. Run `checks`. Then switch on what you want, one switch at a time.
+4. Run `checks`. Then switch on what you want, one switch at a time. Run the bootstrap again first (it is safe to repeat):
+   1.1.0's switches need a few more roles for the deployer (keeping words: BigQuery in the team projects).
 5. When ready, set `key_maker: litellm` in the catalogue: nothing is revoked.
 
 ## One address, many teams

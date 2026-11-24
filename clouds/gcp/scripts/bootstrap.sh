@@ -54,7 +54,7 @@ for r in run.admin compute.admin cloudsql.admin redis.admin secretmanager.admin 
 done
 for p in $TEAM_PROJECTS; do
   for r in run.admin compute.networkAdmin secretmanager.admin dns.admin iam.serviceAccountAdmin iam.serviceAccountUser \
-    iam.roleAdmin resourcemanager.projectIamAdmin serviceusage.serviceUsageAdmin browser; do
+    iam.roleAdmin resourcemanager.projectIamAdmin serviceusage.serviceUsageAdmin browser \n    bigquery.dataOwner; do  # bigquery.dataOwner: the team's own dataset when its words are kept (capture)
     bind "$p" "$r"
   done
 done
