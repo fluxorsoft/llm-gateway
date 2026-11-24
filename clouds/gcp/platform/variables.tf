@@ -92,6 +92,17 @@ variable "cmek_keys" {
   }
 }
 
+variable "vpc_sc" {
+  type = object({
+    policy     = string                # accessPolicies/<number>: the organisation's access policy
+    enforce    = optional(bool, false) # false: dry run; violations are logged, nothing is blocked
+    services   = optional(list(string), ["aiplatform.googleapis.com", "modelarmor.googleapis.com", "secretmanager.googleapis.com", "bigquery.googleapis.com", "storage.googleapis.com"])
+    identities = optional(list(string), []) # who may still come in from outside, e.g. the GitHub deployer: serviceAccount:...
+  })
+  default     = null
+  description = "A VPC Service Controls perimeter around the gateway and every team project. Start in dry run, read the violations, then enforce"
+}
+
 variable "budget_alerts" {
   type        = bool
   default     = false
