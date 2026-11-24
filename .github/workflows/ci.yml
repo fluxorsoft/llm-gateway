@@ -51,7 +51,7 @@ jobs:
       - name: A tool's model names stay within the team
         run: |
           ! terraform -chdir=core/settings plan -input=false -no-color -var dir=./testdata/sneaky > sneaky.txt 2>&1
-          for w in "is also the name of a model here" "asks for 'gemini-3.5-flash'"; do grep -q "$w" sneaky.txt || { cat sneaky.txt; exit 1; }; done
+          for w in "is also the name of a model here" "asks for 'gemini-3.5-flash'" "cannot contain '-'"; do grep -q "$w" sneaky.txt || { cat sneaky.txt; exit 1; }; done
       - name: What this version cannot serve is refused, with its reason
         run: |
           ! terraform -chdir=core/settings plan -input=false -no-color -var dir=./testdata/later > later.txt 2>&1

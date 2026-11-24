@@ -22,3 +22,6 @@ limits:
 tools:
   gemini-cli: {asks_for: [gemini-3.8-flash, gemini-3.5-flash]}
   codex: {asks_for: []}
+
+tool_servers:
+  my-files: {url: "https://files.internal.example.com/mcp"}   # refused: LiteLLM does not allow - in a name
