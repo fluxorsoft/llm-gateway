@@ -29,6 +29,10 @@ _template = contextvars.ContextVar("armor_template", default=None)
 
 
 
+NOTHING_TO_CHECK = {"sanitizationResult": {"filterMatchState": "NO_MATCH_FOUND", "invocationResult": "SUCCESS",
+                                         "filterResults": {"blank": {"executionState": "EXECUTION_SUCCESS"}}}}
+
+
 class FullArmor(ModelArmorGuardrail):
     @property
     def template_id(self):
@@ -39,6 +43,12 @@ class FullArmor(ModelArmorGuardrail):
         self._default_template = value
 
     async def make_model_armor_request(self, *args, request_data=None, **kwargs):
+        content = kwargs.get("content", args[0] if args else None)
+        source = kwargs.get("source", args[1] if len(args) > 1 else "user_prompt")
+        if source == "model_response" and not (content or "").strip() and not kwargs.get("file_bytes"):
+            # a blank answer (the model spent its allowance thinking): Model Armor refuses empty text with a 400, which
+            # LiteLLM turns into a 500 for the caller. There are no words to check, so it passes as checked.
+            return NOTHING_TO_CHECK
         token = _template.set(TEMPLATES.get(team_of(request_data)))
         try:
             return await super().make_model_armor_request(*args, request_data=request_data, **kwargs)

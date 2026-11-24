@@ -42,6 +42,27 @@ class TemplatesTest(unittest.TestCase):
         self.assertEqual(wrong, [])
 
 
+class BlankAnswerTest(unittest.TestCase):
+    def test_a_blank_answer_is_not_sent_and_passes(self):
+        p = Probe()
+        sent = []
+
+        async def fake_request(*args, **kwargs):
+            sent.append(kwargs.get("content"))
+            return {}
+        original = armor.ModelArmorGuardrail.make_model_armor_request
+        armor.ModelArmorGuardrail.make_model_armor_request = lambda s, *a, **k: fake_request(*a, **k)
+        try:
+            for text in ("", "  \n", None):
+                got = asyncio.run(p.make_model_armor_request(content=text, source="model_response", request_data={}))
+                self.assertFalse(p._should_block_content(got))
+            asyncio.run(p.make_model_armor_request(content="", source="user_prompt", request_data={}))  # questions always go
+            asyncio.run(p.make_model_armor_request(content="words", source="model_response", request_data={}))
+        finally:
+            armor.ModelArmorGuardrail.make_model_armor_request = original
+        self.assertEqual(sent, ["", "words"])
+
+
 class ProviderToolsTest(unittest.TestCase):
     def test_a_team_not_allowed_the_tool_is_refused(self):
         armor.PROVIDER_TOOLS = {"eng": ["google_search"]}
