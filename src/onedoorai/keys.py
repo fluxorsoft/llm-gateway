@@ -12,6 +12,7 @@ Who chooses the value (`key_maker` in the catalogue):
 Without --apply it only reports what it would do, and exits 2 when anything differs (the drift check).
 """
 import base64
+import hashlib
 import json
 import os
 import re
@@ -160,12 +161,29 @@ def read_secret(project, secret, token=_metadata_token):
         raise
 
 
+def retire_versions(project, secret, gone, token=_metadata_token):
+    """Disables each enabled version of the secret whose value is a deleted key (LiteLLM keeps a key as its SHA-256, so
+    `gone` is those hashes): a removed key's value is no longer readable. Returns the versions disabled."""
+    base = f"https://secretmanager.googleapis.com/v1/projects/{project}/secrets/{secret}/versions"
+    def call(url, body=None):
+        r = urllib.request.Request(url, json.dumps(body).encode() if body is not None else None,
+                                   {"Authorization": "Bearer " + token(), "Content-Type": "application/json"})
+        return json.load(urllib.request.urlopen(r, timeout=30))
+    done = []
+    for v in call(base + "?filter=state:ENABLED").get("versions", []):
+        value = base64.b64decode(call(f"https://secretmanager.googleapis.com/v1/{v['name']}:access")["payload"]["data"])
+        if hashlib.sha256(value).hexdigest() in gone:
+            call(f"https://secretmanager.googleapis.com/v1/{v['name']}:disable", {})
+            done.append(v["name"].rsplit("/", 1)[-1])
+    return sorted(done, key=int)
+
+
 def permission(servers, ids):
     """LiteLLM's object_permission for {server: [tools]}: the servers, and the tools of each ("*": all of them)."""
     return {"mcp_servers": sorted(servers), "mcp_tool_permissions": {ids[s]: sorted(t) for s, t in servers.items() if "*" not in t and s in ids}}
 
 
-def run(wanted, admin, write=write_secret, apply=False, say=print, agents_secret=None, read=read_secret):
+def run(wanted, admin, write=write_secret, apply=False, say=print, agents_secret=None, read=read_secret, retire=retire_versions):
     """Returns how many steps change something. Each step is reported as one JSON line, without any key's value."""
     teams = admin.teams()
     existing = {t: admin.keys(teams[t]["team_id"]) for t in wanted if t in teams}
@@ -174,6 +192,7 @@ def run(wanted, admin, write=write_secret, apply=False, say=print, agents_secret
     project, secret = (agents_secret or "/").split("/", 1)
     agent_map = json.loads(read(project, secret) or "{}") if agents_secret and apply else {}
     map_changed = False
+    gone = {}  # (project, secret) -> hashes of the keys deleted from it
     ids = admin.servers() if any(w.get("servers") for w in wanted.values()) else {}
     for team, w in sorted(wanted.items()):  # each team's tool servers, every time (it is cheap and keeps LiteLLM in step)
         if w.get("servers") and team in teams and apply:
@@ -225,10 +244,19 @@ def run(wanted, admin, write=write_secret, apply=False, say=print, agents_secret
                 line["action"], line["why"] = "create failed: the secret could not be written, the key was deleted", type(e).__name__
         elif action == "delete":
             admin.delete(alias)
+            if existing[team][alias].get("token") and not AGENT.match(alias):
+                where = (w["project"], "llm-key-" + alias.split(".", 1)[1] if "." in alias else "llm-gateway-key")
+                gone.setdefault(where, set()).add(existing[team][alias]["token"])
             if AGENT.match(alias):
                 agent_map = {i: v for i, v in agent_map.items() if f"{v['team']}~{v['agent']}" != alias}
                 map_changed = True
         say(json.dumps(line), flush=True)
+    for (p, sec), hashes in sorted(gone.items()):
+        try:
+            say(json.dumps({"message": "keys", "action": "old values disabled", "secret": sec, "project": p,
+                            "versions": retire(p, sec, hashes)}), flush=True)
+        except Exception as e:  # the key is already dead; the value staying readable is untidy, not unsafe
+            say(json.dumps({"message": "keys", "action": "old values not disabled", "secret": sec, "project": p, "why": type(e).__name__}), flush=True)
     if apply and agents_secret and map_changed:
         version = write(project, json.dumps(agent_map), secret)
         say(json.dumps({"message": "keys", "action": "agents map written", "agents": len(agent_map), "secret_version": version}), flush=True)

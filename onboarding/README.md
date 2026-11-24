@@ -25,7 +25,7 @@ Make a **private** repository from this folder: its settings name projects, and 
 
 ## Set up
 
-1. Make this repository from the folder, private. Turn on "Allow GitHub Actions to create and approve pull requests".
+1. Make this repository from the folder, private. Turn on "Allow GitHub Actions to create and approve pull requests", in the organisation's settings first if it has one.
 2. Run the gateway's `clouds/gcp/scripts/bootstrap.sh` with `GITHUB_REPO=<this repository>` and `GITHUB_ENVIRONMENT=gateway`.
 3. Create the environment **gateway** here: only `main`, with reviewers, and the variables the bootstrap prints.
 4. Protect `main`: pull requests only, `plan.yml` must pass, and a code owner per team file (`.github/CODEOWNERS`).

@@ -82,6 +82,40 @@ class KeysTest(unittest.TestCase):
         changes, lines, _ = self.run_keys(a, wanted(orders=([2], None)))
         self.assertEqual(a.deleted, ["orders-1"])
 
+    def test_a_deleted_keys_value_is_disabled_in_its_secret(self):
+        a = FakeAdmin({"orders": {"orders-2": {"token": "hash-2"}, "orders-3": {"token": "hash-3"}}})
+        retired = []
+        out = io.StringIO()
+        keys.run(wanted(orders=([3], None)), a, write=lambda *x: "9", apply=True, say=lambda s, flush=False: out.write(s + "\n"),
+                 retire=lambda project, secret, gone: retired.append((project, secret, gone)) or ["1"])
+        self.assertEqual(a.deleted, ["orders-2"])
+        self.assertEqual(retired, [("orders-project", "llm-gateway-key", {"hash-2"})])
+        self.assertIn('"versions": ["1"]', out.getvalue())
+
+    def test_retire_versions_disables_only_the_deleted_keys_values(self):
+        import base64, hashlib
+        values = {"1": "sk-old", "2": "sk-new"}
+        calls = []
+
+        def fake_urlopen(r, timeout=None):
+            calls.append(r.full_url)
+            u = r.full_url
+            if u.endswith("?filter=state:ENABLED"):
+                body = {"versions": [{"name": f"projects/p/secrets/s/versions/{v}"} for v in values]}
+            elif u.endswith(":access"):
+                body = {"payload": {"data": base64.b64encode(values[u.split("/")[-1].split(":")[0]].encode()).decode()}}
+            else:
+                body = {}
+            return io.BytesIO(json.dumps(body).encode())
+        real = keys.urllib.request.urlopen
+        keys.urllib.request.urlopen = fake_urlopen
+        try:
+            done = keys.retire_versions("p", "s", {hashlib.sha256(b"sk-old").hexdigest()}, token=lambda: "t")
+        finally:
+            keys.urllib.request.urlopen = real
+        self.assertEqual(done, ["1"])
+        self.assertEqual([c for c in calls if c.endswith(":disable")], ["https://secretmanager.googleapis.com/v1/projects/p/secrets/s/versions/1:disable"])
+
     def test_without_apply_nothing_changes_and_the_difference_is_counted(self):
         a = FakeAdmin({"orders": {"orders-1": {}}})
         changes, lines, written = self.run_keys(a, wanted(orders=([2], None)), apply=False)

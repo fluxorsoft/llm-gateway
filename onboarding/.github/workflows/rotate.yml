@@ -37,7 +37,7 @@ jobs:
         run: |
           PYTHONPATH=../gw/src python3 -m onedoorai rotate --settings settings --write ${NOW:+--now "$NOW"} | tee ../steps.json
           git diff --quiet && { echo "no rotation due"; exit 0; }
-          branch="rotate-$(date -u +%Y%m%d)"
+          branch="rotate-$(date -u +%Y%m%d-%H%M)"
           git checkout -b "$branch"
           git -c user.name="rotate" -c user.email="rotate@users.noreply.github.com" commit -qam "Key rotation, $(date -u +%Y-%m-%d)"
           git push -q origin "$branch"
