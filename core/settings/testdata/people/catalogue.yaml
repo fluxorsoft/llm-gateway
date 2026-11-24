@@ -1,3 +1,4 @@
+schema: 2
 # The models the central team allows, where each may run, and which teams may leave the default residency rule.
 models:
   gemini-3.5-flash:

@@ -23,7 +23,6 @@ run "people_get_a_handle_and_a_share" {
   variables {
     dir = "./testdata/people"
   }
-  expect_failures = [check.key_maker]
   assert {
     condition     = output.teams["eng"].members[0].handle == "ann-lee" && output.teams["eng"].members[1].daily_usd == null && length(output.errors) == 0 && output.team_safety["eng"] == "strict" && output.safety["strict"].injection == "LOW_AND_ABOVE" && output.capture["eng"].days == 30 && output.agents_on && output.teams["eng"].agents[0].stopped == false && output.tool_servers["files"].transport == "http" && output.team_provider_tools["eng"] == ["google_search"]
     error_message = jsonencode(output.teams["eng"].members)
