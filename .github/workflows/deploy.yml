@@ -29,6 +29,10 @@ on:
       gateway_repository:
         type: string
         default: fluxorsoft/llm-gateway
+      environment:
+        type: string
+        default: gateway
+        description: "The caller's environment (reviewers, and the only place keyless sign-in works). Empty where the plan has none (private repositories on GitHub Free): then sign-in works only from main"
 permissions:
   contents: read
   id-token: write
@@ -46,7 +50,7 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: gateway
+    environment: ${{ (inputs.version && format('{0}', inputs.environment)) || (!inputs.version && 'gateway') || '' }}
     timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

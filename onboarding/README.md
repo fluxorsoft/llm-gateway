@@ -30,6 +30,10 @@ Make a **private** repository from this folder: its settings name projects, and 
 3. Create the environment **gateway** here: only `main`, with reviewers, and the variables the bootstrap prints.
 4. Protect `main`: pull requests only, `plan.yml` must pass, and a code owner per team file (`.github/CODEOWNERS`).
 
+**On GitHub Free**, private repositories have no environments and no branch protection. Run the bootstrap with
+`GITHUB_ENVIRONMENT=""`, set `environment: ""` in `deploy.yml`, and put the variables on the repository: keyless sign-in
+then works only from `main`, so **anyone who can write to `main` can deploy**. Keep that list short, or use a paid plan.
+
 ## How a team joins
 
 1. The app team opens an issue from **Request access to the LLM gateway**.

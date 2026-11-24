@@ -20,4 +20,5 @@ jobs:
     with:
       action: ${{ inputs.action || 'settings' }}
       version: v1.1.0
+      environment: gateway # its reviewers approve every deploy; "" where your GitHub plan has none (see README)
     secrets: inherit

@@ -4,7 +4,7 @@
 #   PROJECT=... TEAM_PROJECTS="a b" GITHUB_REPO=owner/repo REGION=europe-west2 [CMEK=1] clouds/gcp/scripts/bootstrap.sh
 set -euo pipefail
 : "${PROJECT:?}" "${TEAM_PROJECTS:?}" "${GITHUB_REPO:?}" "${REGION:=europe-west2}" "${NAME:=llmgw}" "${REPO_LOCATION:=europe}"
-: "${GITHUB_ENVIRONMENT:=gateway}"
+: "${GITHUB_ENVIRONMENT=gateway}" # set it empty for none (private repositories on GitHub Free have no environments)
 g() { gcloud --project="$PROJECT" --quiet "$@"; }
 bind() { gcloud projects add-iam-policy-binding "$1" --quiet --member="serviceAccount:$deployer" --role="roles/$2" --condition=None --format=none; }
 
@@ -28,13 +28,20 @@ fi
 deployer="$NAME-github@$PROJECT.iam.gserviceaccount.com"
 g iam service-accounts describe "$deployer" > /dev/null 2>&1 || { g iam service-accounts create "$NAME-github" --display-name="GitHub Actions: deploys the gateway"; sleep 15; }
 number="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+# with an environment: only jobs in it (its reviewers always apply); without one: only the repository's main branch,
+# so anyone who can write to main can deploy
+if [ -n "$GITHUB_ENVIRONMENT" ]; then
+  condition="assertion.repository == '$GITHUB_REPO' && assertion.environment == '$GITHUB_ENVIRONMENT'"
+else
+  condition="assertion.repository == '$GITHUB_REPO' && assertion.ref == 'refs/heads/main'"
+fi
 g iam workload-identity-pools describe "$NAME-github" --location=global > /dev/null 2>&1 ||
   g iam workload-identity-pools create "$NAME-github" --location=global
 g iam workload-identity-pools providers describe github --workload-identity-pool="$NAME-github" --location=global > /dev/null 2>&1 ||
   g iam workload-identity-pools providers create-oidc github --workload-identity-pool="$NAME-github" --location=global \
     --issuer-uri=https://token.actions.githubusercontent.com \
     --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
-    --attribute-condition="assertion.repository == '$GITHUB_REPO' && assertion.environment == '$GITHUB_ENVIRONMENT'"
+    --attribute-condition="$condition"
 # the provider accepts only this repository's jobs that run in the environment, so its protection rules always apply
 g iam service-accounts add-iam-policy-binding "$deployer" --role=roles/iam.workloadIdentityUser --format=none \
   --member="principalSet://iam.googleapis.com/projects/$number/locations/global/workloadIdentityPools/$NAME-github/attribute.repository/$GITHUB_REPO"
