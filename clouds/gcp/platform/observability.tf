@@ -10,6 +10,7 @@ resource "google_bigquery_dataset" "usage" {
       kms_key_name = default_encryption_configuration.value
     }
   }
+  depends_on = [google_kms_crypto_key_iam_member.agents] # your own keys: the service agent may use the key first
 }
 
 resource "google_logging_project_sink" "usage" {

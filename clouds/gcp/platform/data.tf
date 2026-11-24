@@ -56,6 +56,7 @@ resource "google_sql_database_instance" "this" {
       error_message = "The gateways can open more connections than the database allows: lower gateway_maximum or raise db_tier and db_connections."
     }
   }
+  depends_on = [google_kms_crypto_key_iam_member.agents] # your own keys: the service agent may use the key first
 }
 
 resource "google_sql_database" "this" {
@@ -122,6 +123,7 @@ resource "google_redis_instance" "this" {
   auth_enabled            = true
   transit_encryption_mode = "SERVER_AUTHENTICATION"
   customer_managed_key    = lookup(var.cmek_keys, each.key, null)
+  depends_on              = [google_kms_crypto_key_iam_member.agents] # your own keys: the service agent may use the key first
 }
 
 # ---- secrets ---------------------------------------------------------------------------------------------------------
@@ -144,6 +146,7 @@ resource "google_secret_manager_secret" "this" {
       }
     }
   }
+  depends_on = [google_kms_crypto_key_iam_member.agents] # your own keys: the service agent may use the key first
 }
 
 resource "google_secret_manager_secret_version" "database_url" {
@@ -182,6 +185,7 @@ resource "google_secret_manager_secret" "redis" {
       }
     }
   }
+  depends_on = [google_kms_crypto_key_iam_member.agents] # your own keys: the service agent may use the key first
 }
 
 resource "google_secret_manager_secret_version" "redis" {
@@ -208,6 +212,7 @@ resource "google_secret_manager_secret" "redis_ca" {
       }
     }
   }
+  depends_on = [google_kms_crypto_key_iam_member.agents] # your own keys: the service agent may use the key first
 }
 
 resource "google_secret_manager_secret_version" "redis_ca" {
@@ -273,6 +278,7 @@ resource "google_sql_database_instance" "replica" {
       }
     }
   }
+  depends_on = [google_kms_crypto_key_iam_member.agents] # your own keys: the service agent may use the key first
 }
 
 resource "google_compute_address" "db_copy" {
