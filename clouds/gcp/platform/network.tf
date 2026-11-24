@@ -98,7 +98,7 @@ resource "google_compute_url_map" "this" {
         }
       }
       path_rule {
-        paths   = ["/v1/chat/completions", "/v1/responses", "/v1/models", "/v1beta/models/*"]
+        paths   = ["/v1/chat/completions", "/v1/responses", "/v1/models", "/v1beta/models/*", "/key/info"] # /key/info: onedoorai spend (the filter allows GET, and only the asking key)
         service = google_compute_backend_service.developer[0].id
       }
     }
