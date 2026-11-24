@@ -18,3 +18,8 @@ residency:
 limits:
   max_monthly_usd: 100          # no team may ask for more
   max_key_days: 90
+
+# coding tools on the developers' door, and the model names each asks for (docs/DEVELOPERS.md)
+tools:
+  gemini-cli: {asks_for: [gemini-3.8-flash, gemini-3.5-flash]}
+  codex: {asks_for: []}
