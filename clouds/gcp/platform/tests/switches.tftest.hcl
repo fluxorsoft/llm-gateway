@@ -45,3 +45,22 @@ run "every_switch_on" {
     vpc_sc = { policy = "accessPolicies/1", identities = ["serviceAccount:deployer@example-project.iam.gserviceaccount.com"] }
   }
 }
+
+# After db_failover.sh the copy is the live database: the plan must refuse to replace it.
+run "promoted_copy_refused" {
+  command = plan
+  variables {
+    settings_dir = "../../../onboarding/settings"
+    db_replica   = true
+  }
+  override_resource {
+    target          = random_id.db
+    values          = { hex = "abc123" }
+    override_during = plan
+  }
+  override_data {
+    target = data.google_sql_database_instances.now[0]
+    values = { instances = [{ name = "llmgw-abc123-copy", instance_type = "CLOUD_SQL_INSTANCE" }] }
+  }
+  expect_failures = [google_sql_database_instance.replica]
+}

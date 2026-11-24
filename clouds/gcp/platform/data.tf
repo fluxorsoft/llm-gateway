@@ -228,6 +228,19 @@ check "db_replica_region" {
   }
 }
 
+# What Google says each database is now: after db_failover.sh the copy is a database of its own, and an apply would
+# replace it (the live data) with a new copy of the old one. Refused until db_failback.sh has run.
+data "google_sql_database_instances" "now" {
+  count   = var.db_replica ? 1 : 0
+  project = var.project
+}
+
+locals {
+  copy_promoted = var.db_replica ? contains([
+    for i in data.google_sql_database_instances.now[0].instances : i.name if i.instance_type == "CLOUD_SQL_INSTANCE"
+  ], "${var.name}-${random_id.db.hex}-copy") : false
+}
+
 resource "google_sql_database_instance" "replica" {
   count                = var.db_replica && local.replica_region != null ? 1 : 0
   name                 = "${var.name}-${random_id.db.hex}-copy"
@@ -238,6 +251,12 @@ resource "google_sql_database_instance" "replica" {
   deletion_protection  = var.deletion_protection
   replica_configuration {
     failover_target = false
+  }
+  lifecycle {
+    precondition {
+      condition     = !local.copy_promoted
+      error_message = "The database copy was promoted (db_failover.sh) and is the live database: an apply would replace it. Run clouds/gcp/scripts/db_failback.sh first (docs/OPERATIONS.md, \"A database copy\")."
+    }
   }
   settings {
     edition                     = "ENTERPRISE"
@@ -277,13 +296,18 @@ resource "google_compute_forwarding_rule" "db_copy" {
 
 output "db_failover" {
   value = length(google_sql_database_instance.replica) == 0 ? null : {
-    replica = google_sql_database_instance.replica[0].name
-    address = google_compute_address.db_copy[0].address
-    zone    = google_dns_managed_zone.db.name
-    record  = google_dns_record_set.db.name
-    gateway = var.project
-    regions = keys(var.regions)
-    service = "${var.name}-gateway"
+    replica         = google_sql_database_instance.replica[0].name
+    address         = google_compute_address.db_copy[0].address
+    primary         = google_sql_database_instance.this.name
+    primary_address = google_compute_address.db.address
+    database        = google_sql_database.this.name
+    user            = google_sql_user.this.name
+    bucket_region   = var.primary_region
+    zone            = google_dns_managed_zone.db.name
+    record          = google_dns_record_set.db.name
+    gateway         = var.project
+    regions         = keys(var.regions)
+    service         = "${var.name}-gateway"
   }
 }
 

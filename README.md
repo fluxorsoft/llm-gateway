@@ -329,8 +329,9 @@ migration allows it: take a database backup first.
 ### A database replica
 
 `db_replica` makes a copy in the second region; `clouds/gcp/scripts/db_failover.sh` promotes it and points
-`db.<name>.internal` at it (docs/OPERATIONS.md). You run the failover yourself, recent writes can be lost (replication is
-asynchronous), and failing back means making a new copy. Enterprise Plus adds managed switchover and a write endpoint, at
+`db.<name>.internal` at it; `db_failback.sh` brings the data home and the next apply makes a new copy; plans refuse in
+between, so an apply cannot replace the live database (docs/OPERATIONS.md). You run the failover yourself, and recent
+writes can be lost (replication is asynchronous). Enterprise Plus adds managed switchover and a write endpoint, at
 about four times the extra price.
 
 ### Single sign-on

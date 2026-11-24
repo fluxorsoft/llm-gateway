@@ -63,15 +63,34 @@ LiteLLM's own retention deletes spend rows older than this many days. The usage 
 
 ## A database copy (`db_replica`)
 
-A copy in the second region, kept up to date. To make it the database:
+A copy in the second region, kept up to date. Save the failover details now, while all is well:
 
 ```bash
-terraform -chdir=clouds/gcp/platform output -json db_failover | clouds/gcp/scripts/db_failover.sh
+terraform -chdir=clouds/gcp/platform output -json db_failover > db_failover.json
+```
+
+To make the copy the database, when the primary region is in trouble:
+
+```bash
+clouds/gcp/scripts/db_failover.sh < db_failover.json
 ```
 
 It promotes the copy, points the database's private name at it, and restarts the gateways. Recent writes not yet copied
-can be lost (a few seconds of spend). Afterwards Terraform no longer describes the database: before the next apply, import
-the promoted instance, or rebuild a copy from it.
+can be lost (a few seconds of spend). From then on every plan refuses: an apply would replace the promoted copy, which is
+now the live database, with a new copy of the old one.
+
+To come back, when the primary region is well again:
+
+```bash
+clouds/gcp/scripts/db_failback.sh < db_failover.json
+```
+
+It copies the data from the promoted copy into the primary database (an export and an import through a short-lived
+bucket), points the name back at the primary, restarts the gateways, and deletes the promoted copy and the bucket. Writes
+between the export and the restart are lost: a few seconds of spend. Run the checks, then `apply`: it makes a new copy.
+
+Measured on trial size: the failover took about 6 minutes, nearly all of it the promotion; the fail-back about 6
+minutes; the new copy NEWCOPY. The scripts need `gcloud`, and `jq` or Python.
 
 ## A load test
 
