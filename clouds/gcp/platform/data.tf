@@ -23,6 +23,7 @@ resource "google_sql_database_instance" "this" {
   name                = "${var.name}-${random_id.db.hex}"
   region              = var.primary_region
   database_version    = "POSTGRES_16"
+  encryption_key_name = lookup(var.cmek_keys, var.primary_region, null)
   deletion_protection = var.deletion_protection
   settings {
     edition                     = "ENTERPRISE"
@@ -120,6 +121,7 @@ resource "google_redis_instance" "this" {
   connect_mode            = "DIRECT_PEERING"
   auth_enabled            = true
   transit_encryption_mode = "SERVER_AUTHENTICATION"
+  customer_managed_key    = lookup(var.cmek_keys, each.key, null)
 }
 
 # ---- secrets ---------------------------------------------------------------------------------------------------------
@@ -132,6 +134,12 @@ resource "google_secret_manager_secret" "this" {
         for_each = var.regions
         content {
           location = replicas.key
+          dynamic "customer_managed_encryption" {
+            for_each = contains(keys(var.cmek_keys), replicas.key) ? [var.cmek_keys[replicas.key]] : []
+            content {
+              kms_key_name = customer_managed_encryption.value
+            }
+          }
         }
       }
     }
@@ -165,6 +173,12 @@ resource "google_secret_manager_secret" "redis" {
     user_managed {
       replicas {
         location = each.key
+        dynamic "customer_managed_encryption" {
+          for_each = contains(keys(var.cmek_keys), each.key) ? [var.cmek_keys[each.key]] : []
+          content {
+            kms_key_name = customer_managed_encryption.value
+          }
+        }
       }
     }
   }
@@ -185,6 +199,12 @@ resource "google_secret_manager_secret" "redis_ca" {
     user_managed {
       replicas {
         location = each.key
+        dynamic "customer_managed_encryption" {
+          for_each = contains(keys(var.cmek_keys), each.key) ? [var.cmek_keys[each.key]] : []
+          content {
+            kms_key_name = customer_managed_encryption.value
+          }
+        }
       }
     }
   }
@@ -214,6 +234,7 @@ resource "google_sql_database_instance" "replica" {
   region               = local.replica_region
   database_version     = "POSTGRES_16"
   master_instance_name = google_sql_database_instance.this.name
+  encryption_key_name  = lookup(var.cmek_keys, local.replica_region, null)
   deletion_protection  = var.deletion_protection
   replica_configuration {
     failover_target = false
@@ -264,4 +285,26 @@ output "db_failover" {
     regions = keys(var.regions)
     service = "${var.name}-gateway"
   }
+}
+
+# ---- your own keys (cmek_keys): Google's service agents may use them -------------------------------------------------------
+# Cloud SQL's and Secret Manager's agents exist once made: clouds/gcp/scripts/bootstrap.sh does it when CMEK=1.
+data "google_bigquery_default_service_account" "this" {
+  count = length(var.cmek_keys) == 0 ? 0 : 1
+}
+
+locals {
+  key_users = length(var.cmek_keys) == 0 ? {} : merge([for r, k in var.cmek_keys : {
+    "${r}/sql"     = { key = k, member = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-cloud-sql.iam.gserviceaccount.com" }
+    "${r}/redis"   = { key = k, member = "serviceAccount:service-${data.google_project.this.number}@cloud-redis.iam.gserviceaccount.com" }
+    "${r}/secrets" = { key = k, member = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-secretmanager.iam.gserviceaccount.com" }
+    "${r}/bq"      = { key = k, member = "serviceAccount:${data.google_bigquery_default_service_account.this[0].email}" }
+  }]...)
+}
+
+resource "google_kms_crypto_key_iam_member" "agents" {
+  for_each      = local.key_users
+  crypto_key_id = each.value.key
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = each.value.member
 }

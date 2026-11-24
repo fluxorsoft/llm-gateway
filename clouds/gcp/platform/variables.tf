@@ -82,6 +82,16 @@ variable "audit_record" {
   description = "Once a day, what LiteLLM is set to, in a bucket that keeps every record unchanged; each record carries the previous one's fingerprint"
 }
 
+variable "cmek_keys" {
+  type        = map(string) # region => projects/.../locations/<region>/keyRings/.../cryptoKeys/...
+  default     = {}
+  description = "Your own Cloud KMS keys, one per gateway region, for the database, Redis, secrets and the usage dataset. For new installs: changing a database's key replaces it"
+  validation {
+    condition     = length(var.cmek_keys) == 0 || alltrue([for k in values(var.cmek_keys) : can(regex("^projects/[^/]+/locations/[^/]+/keyRings/[^/]+/cryptoKeys/[^/]+$", k))])
+    error_message = "Each cmek_keys value is a Cloud KMS key's full name."
+  }
+}
+
 variable "budget_alerts" {
   type        = bool
   default     = false

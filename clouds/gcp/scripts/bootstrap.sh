@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Once per gateway project, by someone who owns it and the team projects: APIs, the Terraform state bucket, the image
 # repository, and a keyless identity for GitHub Actions that only this repository's "gateway" environment can use.
-#   PROJECT=... TEAM_PROJECTS="a b" GITHUB_REPO=owner/repo REGION=europe-west2 clouds/gcp/scripts/bootstrap.sh
+#   PROJECT=... TEAM_PROJECTS="a b" GITHUB_REPO=owner/repo REGION=europe-west2 [CMEK=1] clouds/gcp/scripts/bootstrap.sh
 set -euo pipefail
 : "${PROJECT:?}" "${TEAM_PROJECTS:?}" "${GITHUB_REPO:?}" "${REGION:=europe-west2}" "${NAME:=llmgw}" "${REPO_LOCATION:=europe}"
 : "${GITHUB_ENVIRONMENT:=gateway}"
@@ -19,6 +19,11 @@ g storage buckets describe "gs://$PROJECT-$NAME-tfstate" > /dev/null 2>&1 || {
 }
 g artifacts repositories describe "$NAME" --location="$REPO_LOCATION" > /dev/null 2>&1 ||
   g artifacts repositories create "$NAME" --location="$REPO_LOCATION" --repository-format=docker
+
+# with your own encryption keys (cmek_keys), the service agents that use them must exist first
+if [ "${CMEK:-0}" = 1 ]; then
+  for s in sqladmin.googleapis.com secretmanager.googleapis.com; do gcloud beta services identity create --service="$s" --project="$PROJECT" > /dev/null; done
+fi
 
 deployer="$NAME-github@$PROJECT.iam.gserviceaccount.com"
 g iam service-accounts describe "$deployer" > /dev/null 2>&1 || { g iam service-accounts create "$NAME-github" --display-name="GitHub Actions: deploys the gateway"; sleep 15; }

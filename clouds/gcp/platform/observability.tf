@@ -4,6 +4,12 @@ resource "google_bigquery_dataset" "usage" {
   dataset_id                 = "${replace(var.name, "-", "_")}_usage"
   location                   = var.primary_region
   delete_contents_on_destroy = !var.deletion_protection
+  dynamic "default_encryption_configuration" {
+    for_each = contains(keys(var.cmek_keys), var.primary_region) ? [var.cmek_keys[var.primary_region]] : []
+    content {
+      kms_key_name = default_encryption_configuration.value
+    }
+  }
 }
 
 resource "google_logging_project_sink" "usage" {
