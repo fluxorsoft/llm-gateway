@@ -59,6 +59,19 @@ variable "certificate_ids" {
   description = "Certificate Manager certificates (scope ALL_REGIONS) for the domain. Empty makes a private CA: for trials"
 }
 
+variable "canary" {
+  type = object({
+    region  = string # a gateway region other than the primary one
+    gateway = string # the new gateway image, by digest
+  })
+  default     = null
+  description = "The upgrade lane: the migration, the admin service and one region's gateway take the new image first; the other regions keep images.gateway until the checks pass"
+  validation {
+    condition     = var.canary == null || can(regex("@sha256:[0-9a-f]{64}$", var.canary.gateway))
+    error_message = "canary.gateway must be given by digest (...@sha256:...)."
+  }
+}
+
 variable "images" {
   type        = object({ gateway = string, runner = string, app = string })
   description = "Images by digest, as scripts/images.sh prints them"

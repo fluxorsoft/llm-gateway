@@ -97,12 +97,26 @@ resource "google_model_armor_template" "this" {
   }
 }
 
+# The upgrade lane: with a canary, the migration and the admin service run the new image, and so does the canary region's
+# gateway; every other region keeps images.gateway until the lane promotes it.
+locals {
+  core_image    = var.canary == null ? var.images.gateway : var.canary.gateway
+  gateway_image = { for r in keys(var.regions) : r => var.canary != null && try(var.canary.region, "") == r ? var.canary.gateway : var.images.gateway }
+}
+
+check "canary_region" {
+  assert {
+    condition     = var.canary == null || (contains(keys(var.regions), try(var.canary.region, "")) && try(var.canary.region, "") != var.primary_region)
+    error_message = "canary.region must be a gateway region other than the primary one."
+  }
+}
+
 # The migration runs before any new revision: the apply waits for it.
 resource "google_cloud_run_v2_job" "migrate" {
   name                = "${var.name}-migrate"
   location            = var.primary_region
   deletion_protection = false
-  run_execution_token = substr(split("@sha256:", var.images.gateway)[1], 0, 12)
+  run_execution_token = substr(split("@sha256:", local.core_image)[1], 0, 12)
   template {
     template {
       service_account = google_service_account.admin.email
@@ -116,7 +130,7 @@ resource "google_cloud_run_v2_job" "migrate" {
         }
       }
       containers {
-        image   = var.images.gateway
+        image   = local.core_image
         command = ["/app/.venv/bin/python", "/app/litellm/proxy/prisma_migration.py"]
         resources {
           limits = { cpu = "1", memory = "2Gi" }
@@ -166,7 +180,7 @@ resource "google_cloud_run_v2_service" "gateway" {
       }
     }
     containers {
-      image = var.images.gateway
+      image = local.gateway_image[each.key]
       ports {
         container_port = 8080
       }
@@ -258,7 +272,7 @@ resource "google_cloud_run_v2_service" "admin" {
       }
     }
     containers {
-      image = var.images.gateway
+      image = local.core_image
       ports {
         container_port = 8080
       }
@@ -414,4 +428,9 @@ resource "google_cloud_scheduler_job" "drift" {
       service_account_email = google_service_account.scheduler[0].email
     }
   }
+}
+
+# the region the upgrade lane moves first: the first gateway region that is not the primary one
+output "canary_region" {
+  value = try([for r in keys(var.regions) : r if r != var.primary_region][0], null)
 }

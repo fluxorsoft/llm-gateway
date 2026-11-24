@@ -80,5 +80,15 @@ class KeysTest(unittest.TestCase):
         self.assertIn("create failed", lines[0]["action"])
 
 
+    def test_the_probe_says_whether_chosen_values_are_still_accepted(self):
+        class Refusing(FakeAdmin):
+            def create(self, *a, **k):
+                raise RuntimeError("POST /key/generate: 403 Custom API key values are disabled by your administrator")
+        a = FakeAdmin({})
+        self.assertTrue(keys.probe(a))
+        self.assertEqual(len(a.deleted), 1)  # the probe key is removed
+        self.assertFalse(keys.probe(Refusing({})))
+
+
 if __name__ == "__main__":
     unittest.main()

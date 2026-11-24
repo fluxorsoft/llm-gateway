@@ -118,10 +118,27 @@ def run(wanted, admin, write=write_secret, apply=False, say=print):
     return changes
 
 
+def probe(admin):
+    """True when LiteLLM still accepts a key value we choose. Makes one short-lived key and deletes it."""
+    team = next(iter(admin.teams().values()), None)
+    if team is None:
+        return True
+    alias = "probe-" + secrets.token_hex(4)
+    try:
+        admin.create(team["team_id"], alias, team.get("models") or [], 1, "sk-" + secrets.token_urlsafe(36))
+    except RuntimeError as e:
+        if "403" in str(e) or "disabled" in str(e).lower():
+            return False
+        raise
+    admin.delete(alias)
+    return True
+
+
 def main(argv=None):
     import argparse
     p = argparse.ArgumentParser(prog="onedoorai keys")
     p.add_argument("--wanted", required=True, help="JSON: {team: {keys, days, project, maker}}")
+    p.add_argument("--probe", action="store_true", help="only check that LiteLLM accepts the keys' way of making values")
     p.add_argument("--apply", action="store_true", help="make the changes (default: report only)")
     p.add_argument("--admin", default=os.environ.get("ADMIN_PROXY", "http://127.0.0.1:9000"))
     a = p.parse_args(argv)
@@ -129,7 +146,14 @@ def main(argv=None):
     if not master:
         raise SystemExit("the master key is needed: TF_VAR_master_key or LITELLM_MASTER_KEY")
     wanted = json.load(open(a.wanted))
-    changes = run(wanted, Admin(a.admin, master), apply=a.apply)
+    admin = Admin(a.admin, master)
+    if a.probe:
+        if any(w.get("maker") == "terraform" for w in wanted.values()) and not probe(admin):
+            print(json.dumps({"message": "keys", "action": "refused", "why": "this LiteLLM no longer accepts key values we choose: set key_maker: litellm first"}), flush=True)
+            return 3
+        print(json.dumps({"message": "keys", "action": "probe passed"}), flush=True)
+        return 0
+    changes = run(wanted, admin, apply=a.apply)
     return 2 if changes and not a.apply else 0
 
 

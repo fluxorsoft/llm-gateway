@@ -4,6 +4,8 @@
 # apply     images, step 1 (platform), step 2 (LiteLLM settings, in the VPC), the example apps, then the checks
 # settings  a change of settings only: the runner image, step 1 (team projects), step 2
 # checks    the checks alone
+# upgrade   the upgrade lane: new images to the migration, the admin service and one region; the key probe; the settings;
+#           the checks of the teams served there; then every region, and every team's checks
 # destroy   everything apply made
 name: deploy
 on:
@@ -11,7 +13,7 @@ on:
     inputs:
       action:
         type: choice
-        options: [plan, apply, settings, checks, destroy]
+        options: [plan, apply, settings, checks, upgrade, destroy]
         default: plan
 permissions:
   contents: read
@@ -67,7 +69,7 @@ jobs:
           terraform -chdir=clouds/gcp/apps init -no-color -backend-config="bucket=$PROJECT-$NAME-tfstate" -backend-config=prefix=apps > /dev/null
 
       - name: Verify, build and push the images
-        if: contains(fromJSON('["plan", "apply", "settings"]'), inputs.action)
+        if: contains(fromJSON('["plan", "apply", "settings", "upgrade"]'), inputs.action)
         run: |
           export REPO="$REPO_LOCATION-docker.pkg.dev/$PROJECT/$NAME"
           if [ "${{ inputs.action }}" = settings ]; then # the gateways and apps stay as they are
@@ -105,6 +107,37 @@ jobs:
         run: |
           terraform -chdir=clouds/gcp/platform output -json teams | jq -r 'to_entries[] | "\(.key) \(.value.project) \(.value.region)"' | while read -r team project region; do
             gcloud run jobs execute "$team-check" --project="$project" --region="$region" --wait < /dev/null
+          done
+
+      - name: Upgrade lane, 1 of 2 (one region first)
+        if: inputs.action == 'upgrade'
+        run: |
+          P=clouds/gcp/platform
+          now="$(terraform -chdir=$P output -json images)"
+          region="$(terraform -chdir=$P output -raw canary_region)"
+          [ -n "$region" ] && [ "$region" != null ] || { echo "::error::the lane needs two gateway regions"; exit 1; }
+          cp $P/ci.auto.tfvars.json new.json # every new image, for step 2
+          new="$(jq -r .images.gateway new.json)"
+          jq --argjson now "$now" --arg r "$region" --arg g "$new" \
+            '.canary = {region: $r, gateway: $g} | .images.gateway = $now.gateway | .images.app = $now.app' \
+            $P/ci.auto.tfvars.json > lane.json
+          cp lane.json $P/ci.auto.tfvars.json
+          terraform -chdir=$P apply -no-color -auto-approve
+          gcloud run jobs execute "$NAME-config" --project="$PROJECT" --region="$REGION" --update-env-vars=MODE=probe --wait
+          gcloud run jobs execute "$NAME-config" --project="$PROJECT" --region="$REGION" --update-env-vars=MODE=apply --wait
+          terraform -chdir=$P output -json teams | jq -r --arg r "$region" 'to_entries[] | select(.value.region == $r) | "\(.key) \(.value.project) \(.value.region)"' | while read -r team project where; do
+            gcloud run jobs execute "$team-check" --project="$project" --region="$where" --wait < /dev/null
+          done
+          echo "region=$region" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upgrade lane, 2 of 2 (every region, every team)
+        if: inputs.action == 'upgrade'
+        run: |
+          P=clouds/gcp/platform
+          cp new.json $P/ci.auto.tfvars.json
+          terraform -chdir=$P apply -no-color -auto-approve
+          terraform -chdir=$P output -json teams | jq -r 'to_entries[] | "\(.key) \(.value.project) \(.value.region)"' | while read -r team project where; do
+            gcloud run jobs execute "$team-check" --project="$project" --region="$where" --wait < /dev/null
           done
 
       - name: Destroy
