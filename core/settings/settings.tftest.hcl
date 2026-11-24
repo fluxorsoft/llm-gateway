@@ -3,12 +3,13 @@ run "the_example_is_valid" {
   variables {
     dir = "../../settings/example"
   }
+  expect_failures = [check.key_maker] # a schema 1 file keeps the 1.0.0 key way, and is warned
   assert {
     condition     = length(output.errors) == 0
     error_message = join("; ", output.errors)
   }
   assert {
-    condition     = output.teams["orders"].cloud == "gcp" && output.schema == 1
+    condition     = output.teams["orders"].cloud == "gcp" && output.schema == 1 && output.key_maker == "terraform"
     error_message = "a 1.0.0 file must read as Google Cloud, schema 1"
   }
   assert {
@@ -30,5 +31,5 @@ run "broken_settings_stop_the_plan" {
   variables {
     dir = "./testdata/broken"
   }
-  expect_failures = [output.teams, output.deployments]
+  expect_failures = [output.teams, output.deployments, check.key_maker]
 }

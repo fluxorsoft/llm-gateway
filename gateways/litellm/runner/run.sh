@@ -19,14 +19,25 @@ for i in $(seq 1 60); do
 done
 terraform init -input=false -no-color -backend-config="bucket=${STATE_BUCKET}" -backend-config="prefix=config" > /tmp/init.log 2>&1 \
   || { cat /tmp/init.log; fail "terraform init"; }
+keys() {
+  terraform output -json keys > /tmp/wanted.json || fail "terraform output"
+  python -m onedoorai keys --wanted /tmp/wanted.json "$@"
+}
 case "${MODE:-plan}" in
-  apply) terraform apply -input=false -no-color -auto-approve || fail "terraform apply" ;;
+  apply)
+    terraform apply -input=false -no-color -auto-approve || fail "terraform apply"
+    keys --apply || fail "the key step"
+    ;;
   destroy) terraform destroy -input=false -no-color -auto-approve || fail "terraform destroy" ;;
   plan)
     terraform plan -input=false -no-color -detailed-exitcode
     code=$?
     [ "$code" = 2 ] && fail "LiteLLM differs from the settings"
     [ "$code" = 0 ] || fail "terraform plan"
+    keys
+    code=$?
+    [ "$code" = 2 ] && fail "the keys differ from the settings"
+    [ "$code" = 0 ] || fail "the key step"
     ;;
   *) fail "MODE is plan, apply or destroy" ;;
 esac

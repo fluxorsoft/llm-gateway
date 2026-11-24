@@ -21,6 +21,9 @@ locals {
   clouds    = ["gcp"]
   providers = ["vertex"]
 
+  # Who chooses a key's value: LiteLLM (schema 2 and later), or we do, as 1.0.0 did (schema 1, until switched).
+  key_maker = try(local.catalogue.key_maker, local.schema >= 2 ? "litellm" : "terraform")
+
   # a file with a missing field is reported once, and left out of the other checks
   whole = { for t, v in local.teams : t => v if alltrue([for f in local.required : contains(keys(v), f)]) }
 
@@ -34,6 +37,7 @@ locals {
   } }]...)
 
   errors = concat(
+    contains(["litellm", "terraform"], local.key_maker) ? [] : ["catalogue: key_maker is litellm or terraform, not '${local.key_maker}'"],
     local.schema > local.readable ? ["catalogue: settings schema ${local.schema} needs a newer gateway; this version reads up to ${local.readable}"] : [],
     [for t, v in local.whole : "${t}: cloud '${try(v.cloud, "gcp")}' is not available in this version (available: ${join(", ", local.clouds)})" if !contains(local.clouds, try(v.cloud, "gcp"))],
     [for m, c in local.catalogue.models : "catalogue: model '${m}' has provider '${try(c.provider, "vertex")}', not available in this version (available: ${join(", ", local.providers)})" if !contains(local.providers, try(c.provider, "vertex"))],
@@ -66,6 +70,16 @@ output "teams" {
 output "errors" { value = local.errors }
 
 output "schema" { value = local.schema }
+
+output "key_maker" { value = local.key_maker }
+
+# LiteLLM will stop accepting key values chosen by the caller; until a deployment switches, every plan says so.
+check "key_maker" {
+  assert {
+    condition     = local.key_maker == "litellm"
+    error_message = "Keys are still made the 1.0.0 way (we choose the value). LiteLLM will stop accepting that: set key_maker: litellm in the catalogue. Nothing is revoked when you switch."
+  }
+}
 
 # one per team, model and location; order is the failover order
 output "deployments" {

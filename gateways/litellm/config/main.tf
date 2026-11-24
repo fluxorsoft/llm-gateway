@@ -38,7 +38,6 @@ module "settings" {
 
 locals {
   teams = module.settings.teams
-  keys  = merge([for t, v in local.teams : { for k in v.keys : "${t}/${k}" => { team = t, number = k } }]...)
   names = { for t in keys(local.teams) : t => distinct([for d in module.settings.deployments : d.name if d.team == t]) }
 }
 
@@ -76,32 +75,32 @@ resource "litellm_team" "this" {
   depends_on      = [litellm_model.this]
 }
 
-# A key is made here, held in memory only, and sent to LiteLLM and to the team's secret with write-only arguments: it
-# is never in the state or the plan.
-ephemeral "random_password" "key" {
-  for_each = local.keys
-  length   = 48
-  special  = false
-}
-
-resource "litellm_key" "this" {
-  for_each  = local.keys
-  team_id   = litellm_team.this[each.value.team].id
-  key_alias = "${each.value.team}-${each.value.number}"
-  key       = "sk-${ephemeral.random_password.key[each.key].result}"
-  models    = local.names[each.value.team]
-  duration  = "${local.teams[each.value.team].key_days}d"
+# Keys are made by the key step after this one (onedoorai keys, run by the runner), so a key's value is never in Terraform
+# state. The keys and secret versions that 1.0.0 made here stay where they are: Terraform forgets them, the key step adopts
+# them by name, and nothing is revoked.
+removed {
+  from = litellm_key.this
   lifecycle {
-    ignore_changes = [duration] # a new life means a new key number
+    destroy = false
   }
 }
 
-resource "google_secret_manager_secret_version" "key" {
-  for_each               = local.keys
-  secret                 = "projects/${local.teams[each.value.team].project}/secrets/llm-gateway-key"
-  secret_data_wo         = "sk-${ephemeral.random_password.key[each.key].result}"
-  secret_data_wo_version = each.value.number
-  depends_on             = [litellm_key.this]
+removed {
+  from = google_secret_manager_secret_version.key
+  lifecycle {
+    destroy = false
+  }
+}
+
+# what the key step makes, keeps or deletes
+output "keys" {
+  value = { for t, v in local.teams : t => {
+    keys    = v.keys
+    days    = v.key_days
+    project = v.project
+    models  = local.names[t]
+    maker   = module.settings.key_maker
+  } }
 }
 
 output "names" { value = local.names }

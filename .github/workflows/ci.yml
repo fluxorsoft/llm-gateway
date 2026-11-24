@@ -18,6 +18,8 @@ jobs:
           terraform_wrapper: false
       - name: The request filter
         run: python3 -m unittest discover -s gateways/litellm/gateway/tests
+      - name: The key step
+        run: python3 -m unittest discover -s tests
       - name: The onedoorai package builds, installs and runs
         run: |
           python3 -m pip install -q build==1.2.2.post1
