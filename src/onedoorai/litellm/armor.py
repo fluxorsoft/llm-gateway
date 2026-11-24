@@ -10,6 +10,8 @@ was skipped for a pass, and does not read embeddings input or a model's reasonin
 
 The rest (the call to Model Armor, streamed answers held until checked, failing closed) is LiteLLM's.
 """
+import contextvars
+import json
 import os
 
 from fastapi import HTTPException
@@ -72,7 +74,36 @@ def incomplete(answer):
     return None
 
 
+# Safety rules per team: {team: template}; a team not named uses the template in the settings. The template is chosen for
+# each request from the caller's team and held in a per-request value, so concurrent calls never mix.
+TEMPLATES = json.loads(os.environ.get("ARMOR_TEMPLATES") or "{}")
+_template = contextvars.ContextVar("armor_template", default=None)
+
+
+def team_of(data):
+    for k in ("metadata", "litellm_metadata"):
+        m = (data or {}).get(k) or {}
+        if m.get("user_api_key_team_alias") or m.get("user_api_key_team_id"):
+            return m.get("user_api_key_team_alias") or m.get("user_api_key_team_id")
+    return None
+
+
 class FullArmor(ModelArmorGuardrail):
+    @property
+    def template_id(self):
+        return _template.get() or self._default_template
+
+    @template_id.setter
+    def template_id(self, value):
+        self._default_template = value
+
+    async def make_model_armor_request(self, *args, request_data=None, **kwargs):
+        token = _template.set(TEMPLATES.get(team_of(request_data)))
+        try:
+            return await super().make_model_armor_request(*args, request_data=request_data, **kwargs)
+        finally:
+            _template.reset(token)
+
     # LiteLLM runs only the hooks it finds in the class itself, not inherited ones: without these lines a streamed answer
     # would go out unchecked. gateways/litellm/gateway/tests/integration proves it does not.
     async_moderation_hook = ModelArmorGuardrail.async_moderation_hook

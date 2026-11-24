@@ -36,7 +36,7 @@ locals {
     var.spend_log_days == null ? {} : { general_settings = { maximum_spend_logs_retention_period = "${var.spend_log_days}d" } },
   )
   environment = {
-    for k, s in local.services : k => merge(length(local.gateway_settings) == 0 ? {} : { GATEWAY_SETTINGS = jsonencode(local.gateway_settings) }, s.role == "developer" ? { GATEWAY_DOOR = "developers" } : {}, {
+    for k, s in local.services : k => merge(length(local.gateway_settings) == 0 ? {} : { GATEWAY_SETTINGS = jsonencode(local.gateway_settings) }, s.role == "developer" ? { GATEWAY_DOOR = "developers" } : {}, length(module.settings.team_safety) == 0 ? {} : { ARMOR_TEMPLATES = jsonencode({ for t, n in module.settings.team_safety : t => "${var.name}-${n}" }) }, {
       GATEWAY_ROLE                                                                                        = s.role
       ARMOR_PROJECT                                                                                       = var.project
       ARMOR_TEMPLATE                                                                                      = google_model_armor_template.this[s.region].template_id
@@ -538,4 +538,37 @@ resource "google_cloud_scheduler_job" "pricecheck" {
     }
   }
   depends_on = [google_cloud_run_v2_job_iam_member.pricecheck]
+}
+
+# ---- safety rules per team: a Model Armor template per rule set and region -----------------------------------------------
+resource "google_model_armor_template" "rules" {
+  for_each    = { for p in setproduct(keys(module.settings.safety), keys(var.regions)) : "${p[0]}/${p[1]}" => { rules = module.settings.safety[p[0]], name = p[0], region = p[1] } }
+  template_id = "${var.name}-${each.value.name}"
+  location    = each.value.region
+  filter_config {
+    pi_and_jailbreak_filter_settings {
+      filter_enforcement = "ENABLED"
+      confidence_level   = each.value.rules.injection
+    }
+    dynamic "malicious_uri_filter_settings" {
+      for_each = contains(var.no_uri_filter, each.value.region) ? [] : [1]
+      content {
+        filter_enforcement = "ENABLED"
+      }
+    }
+    rai_settings {
+      dynamic "rai_filters" {
+        for_each = ["DANGEROUS", "HARASSMENT", "HATE_SPEECH", "SEXUALLY_EXPLICIT"]
+        content {
+          filter_type      = rai_filters.value
+          confidence_level = each.value.rules.harmful
+        }
+      }
+    }
+    sdp_settings {
+      basic_config {
+        filter_enforcement = each.value.rules.sensitive_data ? "ENABLED" : "DISABLED"
+      }
+    }
+  }
 }

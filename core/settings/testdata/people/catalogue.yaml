@@ -22,3 +22,6 @@ limits:
 tools:
   gemini-cli: {asks_for: [gemini-3.8-flash, gemini-3.5-flash]}
   codex: {asks_for: []}
+
+safety:
+  strict: {injection: LOW_AND_ABOVE, harmful: LOW_AND_ABOVE, sensitive_data: true}

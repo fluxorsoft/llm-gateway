@@ -25,7 +25,7 @@ run "people_get_a_handle_and_a_share" {
   }
   expect_failures = [check.key_maker]
   assert {
-    condition     = output.teams["eng"].members[0].handle == "ann-lee" && output.teams["eng"].members[1].daily_usd == null && length(output.errors) == 0
+    condition     = output.teams["eng"].members[0].handle == "ann-lee" && output.teams["eng"].members[1].daily_usd == null && length(output.errors) == 0 && output.team_safety["eng"] == "strict" && output.safety["strict"].injection == "LOW_AND_ABOVE"
     error_message = jsonencode(output.teams["eng"].members)
   }
 }

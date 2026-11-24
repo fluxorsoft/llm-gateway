@@ -33,6 +33,10 @@ locals {
   tools          = try(local.catalogue.tools, {})
   all_model_keys = [for k, m in local.models : "${m.team}-${m.alias}"]
 
+  # safety rules per team: named rule sets in the catalogue (Model Armor confidence levels), chosen by a team's `safety:`
+  safety = try(local.catalogue.safety, {})
+  levels = ["LOW_AND_ABOVE", "MEDIUM_AND_ABOVE", "HIGH"]
+
   # Who chooses a key's value: LiteLLM (schema 2 and later), or we do, as 1.0.0 did (schema 1, until switched).
   key_maker = try(local.catalogue.key_maker, local.schema >= 2 ? "litellm" : "terraform")
 
@@ -75,6 +79,9 @@ locals {
     flatten([for t, v in local.whole : [for n, a in try(v.tool_models, {}) : "${t}: tool_models '${n}' points at '${a}', which is not one of the team's models" if !contains(keys(v.models), a)]]),
     flatten([for t, v in local.whole : [for n, a in try(v.tool_models, {}) : "${t}: tool_models '${n}' is also the name of a model here" if contains(local.all_model_keys, n)]]),
     flatten([for t, v in local.whole : [for x in try(v.developer_tools, []) : [for n in try(local.tools[x].asks_for, []) : "${t}: tool '${x}' asks for '${n}': add it to tool_models" if !contains(keys(try(v.tool_models, {})), n)]]]),
+    [for t, v in local.whole : "${t}: safety '${v.safety}' is not in the catalogue" if try(v.safety, null) != null && !contains(keys(local.safety), try(v.safety, ""))],
+    flatten([for n, r in local.safety : [for k, l in r : "catalogue: safety '${n}': ${k} is one of ${join(", ", local.levels)}" if contains(["injection", "harmful"], k) && !contains(local.levels, l)]]),
+    flatten([for n, r in local.safety : [for k in keys(r) : "catalogue: safety '${n}' sets '${k}'; it can set injection, harmful and sensitive_data" if !contains(["injection", "harmful", "sensitive_data"], k)]]),
     [for p in distinct([for t, v in local.whole : v.project]) : "project '${p}' is used by more than one team" if length([for t, v in local.whole : t if v.project == p]) > 1],
   )
 }
@@ -92,6 +99,17 @@ output "errors" { value = local.errors }
 output "schema" { value = local.schema }
 
 output "key_maker" { value = local.key_maker }
+
+# the rule sets teams use: {name: {injection, harmful, sensitive_data}}, and which team uses which
+output "safety" {
+  value = { for n, r in local.safety : n => {
+    injection      = try(r.injection, "MEDIUM_AND_ABOVE")
+    harmful        = try(r.harmful, "MEDIUM_AND_ABOVE")
+    sensitive_data = try(r.sensitive_data, true)
+  } if contains([for t, v in local.whole : try(v.safety, "")], n) }
+}
+
+output "team_safety" { value = { for t, v in local.whole : t => v.safety if try(v.safety, null) != null } }
 
 # LiteLLM will stop accepting key values chosen by the caller; until a deployment switches, every plan says so.
 check "key_maker" {
