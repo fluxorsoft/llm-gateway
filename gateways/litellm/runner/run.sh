@@ -25,7 +25,9 @@ keys() {
 }
 case "${MODE:-plan}" in
   apply)
-    terraform apply -input=false -no-color -auto-approve || fail "terraform apply"
+    # once more after a pause: a new admin instance can lose its database for a moment (503 no_db_connection, seen in QA)
+    terraform apply -input=false -no-color -auto-approve       || { echo '{"message": "config apply failed, trying once more in 30 s", "severity": "WARNING"}'; sleep 30
+           terraform apply -input=false -no-color -auto-approve; } || fail "terraform apply"
     keys --apply || fail "the key step"
     ;;
   pricecheck) python -m onedoorai pricecheck --usage "$USAGE_DATASET" --billing "$BILLING_EXPORT" || fail "the price check" ;;
