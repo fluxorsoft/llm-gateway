@@ -9,6 +9,7 @@ It runs [LiteLLM](https://github.com/BerriAI/litellm) on Cloud Run. This project
 ![Architecture](docs/images/1-architecture.png)
 
 - [What you get](#what-you-get)
+- [New in 1.1.0](#new-in-110)
 - [One address, many teams](#one-address-many-teams)
 - [How a request is checked](#how-a-request-is-checked)
 - [Start](#start)
@@ -21,7 +22,7 @@ It runs [LiteLLM](https://github.com/BerriAI/litellm) on Cloud Run. This project
 - [What it costs](#what-it-costs)
 - [Security model](#security-model)
 - [What was tested, and what was not](#what-was-tested-and-what-was-not)
-- [Container images](#container-images)
+- [Container images and the Python package](#container-images-and-the-python-package)
 - [Licences](#licences)
 
 ## What you get
@@ -37,6 +38,35 @@ It runs [LiteLLM](https://github.com/BerriAI/litellm) on Cloud Run. This project
   route, and apps with no model access of their own.
 - **Cost by team**, in LiteLLM and in BigQuery, without storing prompts or answers.
 - **Keyless delivery** by GitHub Actions, and LiteLLM's image signature verified before every build.
+
+## New in 1.1.0
+
+Nothing changes until it is switched on: a 1.0.0 deployment upgraded with the same settings plans with no change except
+the new images, and forgets (never revokes) the keys 1.0.0 made, which the new key step adopts. LiteLLM is 1.110.3.
+
+| | Switch | Read |
+|---|---|---|
+| A private **onboarding repository** per organisation: settings, request form, plan on pull requests, deploy at a pinned release, release watch, key rotation, model watch | `onboarding/` template | [OPERATIONS](docs/OPERATIONS.md) |
+| The **upgrade lane**: a new LiteLLM in one region first, then everywhere | `upgrade` action | [OPERATIONS](docs/OPERATIONS.md) |
+| **Keys made by LiteLLM**, written only to the team's secret | `key_maker` | [OPERATIONS](docs/OPERATIONS.md) |
+| **Budget alerts**, **cost reports**, a **price check** against the bill, **old spend records** removed, a **database copy** with a failover script, a **chat load test** | `budget_alerts`, `price_check`, `spend_log_days`, `db_replica` | [OPERATIONS](docs/OPERATIONS.md) |
+| The **developers' door** for Codex CLI and Gemini CLI, **budgets for each person**, keys fetched with your Google sign-in, your own spend | `developer_door`, `members` | [DEVELOPERS](docs/DEVELOPERS.md) |
+| **Safety rules per team**, **keeping the words** by choice, a daily **admin record**, a **data perimeter**, **your own encryption keys**, a **model retirement watch** | `safety`, `capture`, `audit_record`, `vpc_sc`, `cmek_keys` | [GOVERNANCE](docs/GOVERNANCE.md) |
+| **Agents** with their own Google identity, budget, limits, stop switch and calls-per-task cap; **task ids**; **tool servers** (MCP) per team and agent; **tool traffic checked** on the way; **provider tools** by request | `agents`, `tool_servers`, `check_tool_traffic`, `provider_tools` | [AGENTS](docs/AGENTS.md) |
+| Layers: `core/` names no cloud or gateway; `clouds/gcp/` and `gateways/litellm/` are today's; [the contract](docs/CONTRACT.md) says what another must provide | | [CONTRACT](docs/CONTRACT.md) |
+| **onedoorai** on PyPI: the gateway's Python parts, and the `onedoorai` command | `pip install onedoorai` | [below](#container-images-and-the-python-package) |
+
+Found while building it, and fixed here: streamed Gemini calls (Gemini CLI) lost their usage record when the client closed
+first (3 of 5 recorded; after the fix, 20 of 20); LiteLLM's Model Armor guardrail ignores tool traffic even when asked;
+LiteLLM's team model aliases are not limited by a key's models, so the settings' rules limit them.
+
+### Upgrading from 1.0.0
+
+1. Read the release notes. Move the deploy into an onboarding repository, or keep it here.
+2. Run `plan`: only the images change, and the 1.0.0 keys and their secret versions show as "will no longer be managed".
+3. Run `apply`. The settings step forgets the keys (`removed`, never destroyed) and the key step adopts them by name.
+4. Run `checks`. Then switch on what you want, one switch at a time.
+5. When ready, set `key_maker: litellm` in the catalogue: nothing is revoked.
 
 ## One address, many teams
 
@@ -75,11 +105,11 @@ model. Two teams' networks are each peered to the gateway's, and not to each oth
 
 **Why a filter in front of LiteLLM.** Before 1.111.0, LiteLLM accepts `vertex_project` and `vertex_location` in a
 request. Without the filter, one team's key was served from another team's project, and from the `us` location. The
-filter ([gateway/guard.py](gateway/guard.py)) sees the raw request, allows only known paths, fields and headers, and
+filter ([guard.py](src/onedoorai/litellm/guard.py)) sees the raw request, allows only known paths, fields and headers, and
 passes on a rebuilt body. A LiteLLM hook cannot do this: LiteLLM has already changed the body when the hook sees it.
 
 **Why a guardrail of our own.** LiteLLM's Model Armor guardrail (1.108.15) shows Model Armor only the last block of user
-messages, and takes a check that was skipped for a pass. Ours ([gateway/armor.py](gateway/armor.py)) is a small class on
+messages, and takes a check that was skipped for a pass. Ours ([armor.py](src/onedoorai/litellm/armor.py)) is a small class on
 top of it:
 
 | | Read by Model Armor |
@@ -105,7 +135,7 @@ You need a gateway project, one project per team, and an owner of all of them fo
 ```bash
 # 1. once: APIs, the state bucket, the image repository, and a keyless identity for GitHub Actions
 PROJECT=my-gateway TEAM_PROJECTS="orders-project support-project" GITHUB_REPO=owner/repo \
-  REGION=europe-west2 scripts/bootstrap.sh
+  REGION=europe-west2 clouds/gcp/scripts/bootstrap.sh
 ```
 
 2. In GitHub, create the environment **`gateway`**: allow only the `main` branch, add reviewers, and set these variables
@@ -116,7 +146,7 @@ PROJECT=my-gateway TEAM_PROJECTS="orders-project support-project" GITHUB_REPO=ow
 | `GCP_PROJECT`, `GCP_IDENTITY`, `GCP_PROVIDER` | printed by the bootstrap |
 | `GCP_REGION` | `europe-west2` |
 | `SETTINGS_DIR` | `settings/mycompany` (default `settings/example`) |
-| `PLATFORM_TFVARS` | JSON of [terraform/platform/variables.tf](terraform/platform/variables.tf): `{"domain": "llm.example.internal", "alert_email": "llm-team@example.com", "admin_members": ["group:llm-admins@example.com"]}` |
+| `PLATFORM_TFVARS` | JSON of [clouds/gcp/platform/variables.tf](clouds/gcp/platform/variables.tf): `{"domain": "llm.example.internal", "alert_email": "llm-team@example.com", "admin_members": ["group:llm-admins@example.com"]}` |
 | `APP_MEMBERS` | JSON: who may open the example apps |
 | `EXAMPLE_PROJECTS` | only with the example settings: `{"orders-project-id": "...", "support-project-id": "..."}` |
 
@@ -135,8 +165,8 @@ keeps their addresses for an hour or two. Everything that costs money is gone by
 
 > Workflow logs show project ids. Keep the repository you deploy from private.
 
-**Two steps, two states.** Step 1 (`terraform/platform`) is Google Cloud, applied by GitHub. Step 2
-(`terraform/config`) is LiteLLM's models, teams and keys, through
+**Two steps, two states.** Step 1 (`clouds/gcp/platform`) is Google Cloud, applied by GitHub. Step 2
+(`gateways/litellm/config`) is LiteLLM's models, teams and keys, through
 [LiteLLM's provider](https://github.com/BerriAI/terraform-provider-litellm). It is applied by the **runner**, a Cloud Run
 job inside the network, so the admin service is never public and GitHub never holds the master key.
 
@@ -250,7 +280,8 @@ work in between; the old one answers 401 at the end. Keys expire after `key_days
 (`admin_public_ingress` allows that from outside the network; IAM still applies):
 
 ```bash
-ADMIN_URL=$(terraform -chdir=terraform/platform output -raw admin_url) python runner/admin_proxy.py
+pip install onedoorai
+onedoorai admin --url "$(terraform -chdir=clouds/gcp/platform output -raw admin_url)"
 # http://127.0.0.1:9000/ui/  user: admin  password: the <name>-master-key secret
 ```
 
@@ -274,8 +305,8 @@ where jsonPayload.llm_usage.ok group by 1, 2, 3 order by usd desc
 **Alerts:** models failing in a location; Redis failing; Model Armor failing; requests with fields that are not allowed;
 the settings run failing or finding changes; gateway 5xx; the database down.
 
-**Upgrade LiteLLM:** read what changed in its Model Armor guardrail, then put a new digest in [LITELLM_IMAGE](LITELLM_IMAGE) and the same version in
-[terraform/config](terraform/config/main.tf), then `apply`. The signature is verified, the migration runs first, and an
+**Upgrade LiteLLM:** read what changed in its Model Armor guardrail, then put a new digest in [LITELLM_IMAGE](gateways/litellm/LITELLM_IMAGE) and the same version in
+[gateways/litellm/config](gateways/litellm/config/main.tf), then run the `upgrade` action: one region first (docs/OPERATIONS.md). The signature is verified, the migration runs first, and an
 unready revision gets no traffic. Pin digests of the LTS line, and let a release age about a week unless it fixes a
 security fault: on 21 October 2026 the `latest` and `main-stable` tags briefly carried malware. Roll back by reverting the commit, if the
 migration allows it: take a database backup first.
@@ -295,13 +326,12 @@ migration allows it: take a database backup first.
 | `drift_check`, `alert_email` | off | on |
 | `regions` | two | two; both in the EU for EU residency |
 
-Not built, with what it would take:
-
 ### A database replica
 
-Cloud SQL Enterprise is enough: create a cross-region replica, point `db.<name>.internal` at it, and promote it with a
-script. You run the failover yourself, recent writes can be lost (replication is asynchronous), and failing back means
-making a new replica. Enterprise Plus adds managed switchover and a write endpoint, at about four times the extra price.
+`db_replica` makes a copy in the second region; `clouds/gcp/scripts/db_failover.sh` promotes it and points
+`db.<name>.internal` at it (docs/OPERATIONS.md). You run the failover yourself, recent writes can be lost (replication is
+asynchronous), and failing back means making a new copy. Enterprise Plus adds managed switchover and a write endpoint, at
+about four times the extra price.
 
 ### Single sign-on
 
@@ -311,8 +341,9 @@ small portal of your own can call LiteLLM's admin API for self-service. Teams do
 
 ### Others
 
-Guardrails per team, and LiteLLM's own audit log (Enterprise features of LiteLLM); other model providers (they need a
-controlled way out, as there is no internet route); customer-managed keys; a prompt archive; caching; MCP and agents.
+Other model providers (they need a controlled way out, as there is no internet route), other clouds and other gateways
+(the layout and [the contract](docs/CONTRACT.md) leave room), caching, and agents calling agents. Safety rules per team, a
+record of admin changes, your own keys, keeping words, MCP and agents are in 1.1.0, built without LiteLLM's paid parts.
 
 ## What it costs
 
@@ -356,6 +387,14 @@ day, pull it again, and compare the digest.
 
 ## What was tested, and what was not
 
+**1.1.0, before its release.** Every change runs, in CI: the settings' rules (including what is refused, with reasons),
+the key step, budget levels, the price check's comparison, rotation, the admin record and model watch as unit tests; the
+gateway image with the real LiteLLM 1.110.3 and a pretend Model Armor for both doors, safety rules per team, keeping words,
+agents' identities with real signatures, the calls-per-task cap, and tool traffic with a real tool server. Before that, nine
+spikes, some on a live 1.0.0 deployment (the folder move planned no change; the 1.0.0 keys were adopted and none revoked).
+The live test of the whole release, upgrading a running 1.0.0, is recorded here before 1.1.0 is published.
+
+
 **The first build, on a real deployment**, trial size, 22 November 2026, LiteLLM 1.108.15: 29 checks as each of two
 teams; both failovers; drift; key rotation; the alerts for models and for settings; BigQuery usage; 600 calls from one
 client at 114 a second (`GET /v1/models`, median 165 ms, no errors); teardown.
@@ -378,7 +417,7 @@ repeated.
 Not tested: the loss of a whole Google Cloud region, production sizes, sustained load, your own certificates, Shared VPC
 and on-premises callers, embeddings with a real model, and the drift schedule (its job was run by hand).
 
-## Container images
+## Container images and the Python package
 
 | Image | For |
 |---|---|
@@ -389,10 +428,13 @@ and on-premises callers, embeddings with a real model, and the drift schedule (i
 They are signed. Verify with cosign 3 or newer:
 
 ```bash
-cosign verify ghcr.io/fluxorsoft/llm-gateway/gateway:1.0.0 \
+cosign verify ghcr.io/fluxorsoft/llm-gateway/gateway:1.1.0 \
   --certificate-identity-regexp '^https://github.com/fluxorsoft/llm-gateway/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
+
+The Python parts are on PyPI as [onedoorai](https://pypi.org/project/onedoorai/) (`pip install onedoorai`;
+`onedoorai[litellm]` for the parts that run inside a LiteLLM proxy): `onedoorai admin`, `key`, `spend`, `rotate`, `models`.
 
 Cloud Run cannot pull from GHCR directly: copy them by digest to
 your Artifact Registry, or let the workflow build its own.
@@ -401,5 +443,5 @@ your Artifact Registry, or let the workflow build its own.
 
 This repository is [Apache 2.0](LICENSE). LiteLLM is MIT, except its `enterprise` folder, whose licence does not allow
 production use or distribution without an agreement with BerriAI. The gateway does not use it, so
-[the image](gateway/Dockerfile) leaves it out. The runner image includes Terraform (Business Source License 1.1).
+[the image](gateways/litellm/gateway/Dockerfile) leaves it out. The runner image includes Terraform (Business Source License 1.1).
 "LiteLLM" is BerriAI's name, used here to say what this runs.

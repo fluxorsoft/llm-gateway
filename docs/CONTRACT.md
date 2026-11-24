@@ -16,6 +16,13 @@ One address. Every request carries the team's key as `Authorization: Bearer <key
 | `POST /v1/embeddings` | OpenAI embeddings format, text input | OpenAI embeddings format |
 | `GET /v1/models` | none | The team's models only |
 
+The developers' door (docs/DEVELOPERS.md) adds `POST /v1/responses`, `POST /v1beta/models/{model}:streamGenerateContent`
+(`?alt=sse` only) and `:generateContent`, and `GET /key/info` (the asking key's own spend). When tool servers are listed,
+both doors add `POST /mcp` (JSON-RPC: `jsonrpc`, `id`, `method`, `params`).
+
+Instead of a key, an agent may send a Google ID token for its own service account, with the door's address as audience.
+`X-Task-Id` names a task; `X-Acting-For` carries the Google ID token of the person an agent acts for.
+
 Anything else is `404`. Query strings, compressed bodies and fields outside the list are refused before the gateway sees
 them.
 
@@ -29,10 +36,11 @@ them.
 | 401 | unknown or expired key | | check its key |
 | 403 | a model the team may not use | | check the model name |
 | 422 | the budget is spent | `budget` | stop |
-| 429 | too fast | | wait and retry |
+| 429 | too fast, or an agent's task has made its `calls_per_task` | `calls_per_task` for the latter | wait and retry; or start a new task |
 | 5xx | the door or a model is failing | | wait and retry |
 
-A gateway may say more, but it must say at least these words, so that checks and apps can rely on them.
+A gateway may say more, but it must say at least these words, so that checks and apps can rely on them. A refused tool call
+is a JSON-RPC error whose message starts `refused:`.
 
 ## 3. The safety rule
 
@@ -70,7 +78,9 @@ One line per call, `message: "llm usage"`, field `llm_usage`. Never the question
 |---|---|---|
 | `schema` | 2 | the record's version |
 | `cloud`, `gateway`, `door` | 2 | where it ran: for example `gcp`, `litellm`, `apps` |
-| `task` | 2 | an agent's task id, when given; never used for access |
+| `task` | 2 | the task id from `X-Task-Id`, when given; never used for access |
+| `agent`, `acting_for` | 2 | the agent that called, and the person it acted for (from a signed token only) |
+| `tool`, `tool_server` | 2 | for a tool-server call: the tool and its server |
 | `call_id`, `ok` | 1 | the call, and whether it succeeded |
 | `team`, `key`, `name`, `model` | 1 | who, with which key, which of the team's models, which provider model |
 | `project`, `location` | 1 | where the model ran and was billed |
@@ -79,7 +89,13 @@ One line per call, `message: "llm usage"`, field `llm_usage`. Never the question
 
 A reader of version 1 ignores the newer fields.
 
-## 7. Settings versions
+## 7. What the filter tells the gateway
+
+The request filter passes what it established to the gateway as `x-onedoor-task`, `x-onedoor-agent` and
+`x-onedoor-acting-for` headers. Callers cannot set them: the filter drops every header it does not know. The usage record
+reads them, on every path; no request body is changed.
+
+## 8. Settings versions
 
 `settings/catalogue.yaml` may say `schema: N`. A gateway refuses settings newer than it reads, and names the version it
 needs. Every new field has a default that equals the older behaviour, so older settings keep planning unchanged.
