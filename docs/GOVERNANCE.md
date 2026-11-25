@@ -1,5 +1,7 @@
 # Governance
 
+![Governance](images/10-governance.png)
+
 Each item is off unless set, and each is built from Google Cloud and LiteLLM's free parts.
 
 ## Safety rules per team

@@ -1,5 +1,7 @@
 # Running it day to day
 
+![Onboarding and operations](images/7-operations.png)
+
 Everything here is a switch in the platform's settings (`settings/platform.json` in an onboarding repository, or
 `PLATFORM_TFVARS`), off unless set. The names are the variables in
 [clouds/gcp/platform/variables.tf](../clouds/gcp/platform/variables.tf).

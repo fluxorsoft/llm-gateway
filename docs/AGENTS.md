@@ -1,5 +1,7 @@
 # Agents and tools
 
+![Agents and tools](images/9-agents.png)
+
 An agent decides its own next step and makes many calls. The gateway is where you see it and stop it. What a tool may do
 is a separate lock: it stays with the tool.
 

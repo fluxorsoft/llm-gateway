@@ -56,9 +56,19 @@ the new images, and forgets (never revokes) the keys 1.0.0 made, which the new k
 | Layers: `core/` names no cloud or gateway; `clouds/gcp/` and `gateways/litellm/` are today's; [the contract](docs/CONTRACT.md) says what another must provide | | [CONTRACT](docs/CONTRACT.md) |
 | **onedoorai** on PyPI: the gateway's Python parts, and the `onedoorai` command | `pip install onedoorai` | [below](#container-images-and-the-python-package) |
 
-Found while building it, and fixed here: streamed Gemini calls (Gemini CLI) lost their usage record when the client closed
-first (3 of 5 recorded; after the fix, 20 of 20); LiteLLM's Model Armor guardrail ignores tool traffic even when asked;
-LiteLLM's team model aliases are not limited by a key's models, so the settings' rules limit them.
+Found while building and testing it, and fixed here: streamed Gemini calls (Gemini CLI) lost their usage record when the
+client closed first (3 of 5 recorded; after the fix, 20 of 20); LiteLLM's Model Armor guardrail ignores tool traffic even
+when asked; LiteLLM's team model aliases are not limited by a key's models, so the settings' rules limit them, and its
+Gemini route ignores a team's names, so each person's key carries them too; a blank answer (a model that spent its
+allowance thinking) gave the caller a 500. The full list of what the live test found is [below](#what-was-tested-and-what-was-not).
+
+The diagrams, ten pages in [docs/litellm-gateway.drawio](docs/litellm-gateway.drawio): architecture, many teams,
+configure, a request, failover, **every secret and identity**, onboarding and operations, the developers' door, agents and
+tools, governance.
+
+| ![Secrets and identities](docs/images/6-secrets.png) | ![Onboarding and operations](docs/images/7-operations.png) |
+|---|---|
+| ![The developers' door](docs/images/8-developers.png) | ![Agents and tools](docs/images/9-agents.png) |
 
 ### Upgrading from 1.0.0
 
@@ -88,14 +98,21 @@ Both example apps call **the same URL, the same path and the same request**. The
 
 ### Who may do what (IAM)
 
+Every secret, who writes it and who reads it, and every identity, are on page 6 of the diagrams:
+
+![Secrets and identities](docs/images/6-secrets.png)
+
 | Identity | In the gateway project | In a team's project |
 |---|---|---|
-| Gateway (`<name>-gateway`) | read its secrets, call Model Armor | **predict only** (`aiplatform.endpoints.predict`), through a custom role |
+| Gateway (`<name>-gateway`), also the developers' door | read its secrets, call Model Armor | **predict only** (`aiplatform.endpoints.predict`), through a custom role |
 | Admin service (`<name>-admin`) | read its secrets | nothing: it cannot call a model |
-| Runner (`<name>-runner`) | read the master key, call the admin service, its own state bucket | write the team's key to the team's one secret |
+| Runner (`<name>-runner`) | read the master key, call the admin service, its own state bucket; write the agents' map and the admin record; read usage and billing (price check) | write the team's key, and each person's, to their own secrets; disable a removed key's values |
+| Scheduler identities (`-scheduler`, `-budgets`, `-pricecheck`, `-audit`) | start the runner with one mode | nothing |
 | The team's app (`llm-app`) | nothing | read the team's one secret. **No model access** |
+| A member | nothing | read their own `llm-key-<handle>` |
+| An agent's identity | nothing: its Google ID token is accepted by the gateway | nothing |
 | People in `admin_members` | open the admin service (Cloud Run IAM), then log in to LiteLLM | nothing |
-| GitHub Actions (`<name>-github`) | deploy, from one repository and one environment | deploy the rows above |
+| GitHub Actions (`<name>-github`) | deploy, from one repository (and its `gateway` environment where the plan has environments) | deploy the rows above; with `VPC_SC_POLICY`, edit perimeters in that policy |
 
 An app that calls the model API directly with its own identity gets a 403. A team's key cannot name another team's
 model. Two teams' networks are each peered to the gateway's, and not to each other.
@@ -369,15 +386,17 @@ Tokens are usually the larger part: 100,000 calls of 1,000 tokens in and 300 out
   location and Model Armor. A compromised dependency has nowhere to send anything.
 - **Predict only.** The gateway's identity can call models in team projects and do nothing else there. It can do so in
   every team's project: protect it, and keep the filter.
-- **Keys are never in Terraform state or plans**: made in memory, sent with write-only arguments. Redis's password, and
+- **Keys are never in Terraform state or plans**: made by LiteLLM (`key_maker: litellm`) or in memory, written only to
+  secrets by the key step; the database's password is sent with a write-only argument and never kept. Redis's password, and
   the trial CA's private key, are in the state; its bucket is private and versioned.
 - **The image** is verified (cosign, keyless), pinned by digest, runs as a non-root user, and holds only LiteLLM's open
   source parts.
 - **The salt key must never change**: it encrypts what LiteLLM keeps in the database.
-- **Apps that could go round** must not hold `aiplatform` roles in their projects; consider VPC Service Controls.
+- **Apps that could go round** must not hold `aiplatform` roles in their projects; `vpc_sc` puts a VPC Service Controls
+  perimeter round every project (measured: enforced, every check passed).
 - **Model Armor lowers the risk of a trick; it does not remove it.** Give apps and their tools only what they need.
 - **GitHub Actions** can deploy to all these projects. Its identity is accepted only from one repository's `gateway`
-  environment: protect that environment with reviewers.
+  environment (protect it with reviewers), or, on a plan without environments, only from `main`.
 
 Report a fault privately through GitHub's security advisories.
 
@@ -389,13 +408,43 @@ day, pull it again, and compare the digest.
 
 ## What was tested, and what was not
 
-**1.1.0, before its release.** Every change runs, in CI: the settings' rules (including what is refused, with reasons),
-the key step, budget levels, the price check's comparison, rotation, the admin record and model watch as unit tests; the
-gateway image with the real LiteLLM 1.110.3 and a pretend Model Armor for both doors, safety rules per team, keeping words,
-agents' identities with real signatures, the calls-per-task cap, and tool traffic with a real tool server. Before that, nine
-spikes, some on a live 1.0.0 deployment (the folder move planned no change; the 1.0.0 keys were adopted and none revoked).
-The live test of the whole release, upgrading a running 1.0.0, is recorded here before 1.1.0 is published.
+**1.1.0, live, 24 and 25 November 2026**, trial size, two regions, two teams in their own projects, deployed from a private
+onboarding repository on GitHub Free. Every switch was turned on and proven, and each run of each team's checks passed:
 
+| | Measured |
+|---|---|
+| Upgrading a running 1.0.0 | `plan`: 0 to add, 5 to change (the images only), 0 to destroy; the 1.0.0 keys adopted, none revoked; plan again: no changes |
+| Database copy | failover about 6 min, fail-back about 6 min, a new copy 7.5 min; checks passed on the promoted copy and after |
+| Upgrade lane | one region about 5.5 min, the rest 3 min; a gateway that cannot start stopped it at the first region, traffic stayed on the last good revision |
+| Key rotation | by pull request, twice; the app restarted onto the new key; a removed key's secret values disabled |
+| Load (apps' door) | 72 of 72 at 0.8 a second: whole answer p50 1075 ms, p95 1420 ms; first streamed words p50 1168 ms, p95 1494 ms |
+| Developers' door | first words 2.2 to 3.8 s; a region starting on demand 71 s for the first call, then 1.9 s; a person at their limit 422, the other carries on; 6 of 6 streamed Gemini calls recorded |
+| Agents | identity token accepted, a stranger refused; the 4th call of a task refused; stop switch 2 s and 27 s in the two regions |
+| Tools | the team's two tools, the agent's one; an injection in an argument and in an answer refused; about 0.36 s a tool call |
+| Governance | a stricter team refused what the other may send; words kept only for the approved team; two admin records chained, a delete refused; the perimeter enforced with every check passing; a fresh install on your own keys |
+| Alerts | a budget alert at 100 per cent; a price check drift alert (43.5 per cent, against a stand-in bill) |
+
+Found by the live test, and fixed before the release (each with a test where one can be written):
+- an apply after a database failover would have replaced the promoted copy, the live database: plans now refuse it, and
+  `db_failback.sh` brings the data home;
+- the deploy restarted only apps whose keys changed in the last commit of a push; a deploy step could pass with no checks
+  run when a command at the head of a pipe failed;
+- the developers' door: a backend timeout and a certificate change Google refuses; `/key/info` and `/mcp` missing from the
+  load balancers' path lists; every Gemini API call refused (a person's key now carries the tools' names);
+- team keys saw no tools; the calls-per-task cap counted a tool session's set-up; the usage record never named the tool;
+- a tool server's name with `-` stopped every gateway at start (now refused by the settings' rules);
+- keeping words made the team's dataset in US: now the gateway's primary region;
+- a fresh install with your own keys made its secrets before the key could be used (the agents' map secret did not use
+  the key at all); a first install that failed partway could leave the database's password unknown (`db_password_round`
+  renews it);
+- `release-watch.yml` looked for GitHub Releases (the gateway has tags) and could propose an older release; it now opens an
+  issue, or a pull request with a token. `rotate.yml` checks the settings itself (GitHub holds checks on a pull request
+  made by Actions); `rotate --now` for a key that leaked;
+- the bootstrap now gives the deployer BigQuery in team projects (keeping words) and, with `VPC_SC_POLICY`, the perimeter.
+
+Known, and documented: the first usage record carrying a newly used field can reach Cloud Logging but not BigQuery while
+BigQuery takes the new column; cancelling a deploy while it destroys can leave a Terraform lock (remove it only if no other
+run holds it).
 
 **The first build, on a real deployment**, trial size, 22 November 2026, LiteLLM 1.108.15: 29 checks as each of two
 teams; both failovers; drift; key rotation; the alerts for models and for settings; BigQuery usage; 600 calls from one

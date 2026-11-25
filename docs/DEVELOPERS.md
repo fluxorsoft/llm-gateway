@@ -1,5 +1,7 @@
 # The developers' door
 
+![The developers' door](images/8-developers.png)
+
 A second door for coding tools, beside the one for apps. It is the same image and the same settings, run as a second service
 (`developer_door` in the platform's settings). It answers as words come, speaks the APIs coding tools use (the Responses API
 and the Gemini API), checks every question whole with Model Armor, and refuses what a tool should not send: pictures, files,
