@@ -5,4 +5,4 @@
   onedoorai.admin      a local door to the gateway's admin service
   onedoorai.keys       makes and adopts team keys; LiteLLM chooses each value, which goes only to the team's secret
 """
-__version__ = "1.1.0.dev0"
+__version__ = "1.1.0"
