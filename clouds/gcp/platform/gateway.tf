@@ -646,10 +646,17 @@ resource "google_secret_manager_secret" "agents" {
         for_each = var.regions
         content {
           location = replicas.key
+          dynamic "customer_managed_encryption" { # it holds every agent's key: your own key too, as the other secrets
+            for_each = contains(keys(var.cmek_keys), replicas.key) ? [var.cmek_keys[replicas.key]] : []
+            content {
+              kms_key_name = customer_managed_encryption.value
+            }
+          }
         }
       }
     }
   }
+  depends_on = [google_kms_crypto_key_iam_member.agents]
 }
 
 resource "google_secret_manager_secret_iam_member" "agents" {
