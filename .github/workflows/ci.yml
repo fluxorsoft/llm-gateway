@@ -96,6 +96,9 @@ jobs:
       - name: Agents' Google identities
         run: |
           docker run --rm -e PYTHONPATH=/w/src -v "$PWD:/w" --entrypoint /app/.venv/bin/python gateway:test             /w/gateways/litellm/gateway/tests/integration/test_identity.py
+      - name: The usage record names the tool
+        run: |
+          docker run --rm -e PYTHONPATH=/w/src -v "$PWD:/w" --entrypoint /app/.venv/bin/python gateway:test             /w/gateways/litellm/gateway/tests/integration/test_usage_record.py
       - name: Tool traffic, checked on the way
         run: GATEWAY=http://127.0.0.1:8080 python3 gateways/litellm/gateway/tests/integration/test_tool_traffic.py
       - name: The developers' door

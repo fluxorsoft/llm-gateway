@@ -24,6 +24,8 @@ def record(kwargs, ok):
     base = str(p.get("api_base") or hidden.get("api_base") or "")
     where = re.search(r"/projects/([^/]+)/locations/([^/]+)/", base)
     error = p.get("error_information") or {}
+    # a tool call (MCP): LiteLLM 1.110 keeps it in the logging object's metadata
+    tool = meta.get("mcp_tool_call_metadata") or p.get("mcp_tool_call_metadata") or kwargs.get("mcp_tool_call_metadata") or {}
     return {
         "schema": 2,
         "cloud": os.environ.get("GATEWAY_CLOUD", "gcp"),
@@ -32,8 +34,8 @@ def record(kwargs, ok):
         "task": filt.get("task"),
         "agent": filt.get("agent"),
         "acting_for": filt.get("acting_for"),
-        "tool": (p.get("mcp_tool_call_metadata") or {}).get("name"),
-        "tool_server": (p.get("mcp_tool_call_metadata") or {}).get("mcp_server_name"),
+        "tool": tool.get("name"),
+        "tool_server": tool.get("mcp_server_name"),
         "call_id": p.get("id"),
         "ok": ok,
         "team": meta.get("user_api_key_team_alias"),
