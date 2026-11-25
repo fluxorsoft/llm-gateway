@@ -140,7 +140,7 @@ output "sql_instance" { value = google_sql_database_instance.this.name }
 output "images" { value = var.images }
 output "runner_job" { value = google_cloud_run_v2_job.runner.name }
 output "teams" {
-  value = { for t, m in module.team : t => { project = module.settings.teams[t].project, app = m.app_email, secret = m.secret, network = m.network, subnet = m.subnet, region = try(module.settings.teams[t].network.region, var.primary_region) } }
+  value = { for t, m in module.team : t => { project = module.settings.teams[t].project, app = m.app_email, secret = m.secret, network = m.network, subnet = m.subnet, region = try(module.settings.teams[t].network.region, var.primary_region), provider_tools = try(module.settings.teams[t].provider_tools, []) } }
 }
 
 data "google_project" "this" {}

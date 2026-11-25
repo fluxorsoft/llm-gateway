@@ -72,7 +72,10 @@ def all_checks():
         s, b, _ = raw("/v1/chat/completions", {"model": MODEL, "messages": [{"role": r, "content": c} for r, c in messages]})
         check(f"an injection in {where} is blocked", s == 400 and blocked(b), f"{s} {b[:80]}")
     s, b, _ = chat(tools=[{"google_search": {}}])
-    check("the provider's tools are refused", s == 400 and "not allowed" in b, f"{s} {b[:80]}")
+    if "google_search" in os.environ.get("PROVIDER_TOOLS", "").split(","):  # this team asked for it, and the catalogue lists it
+        check("the team's provider tool is allowed", s == 200, f"{s} {b[:80]}")
+    else:
+        check("the provider's tools are refused", s == 400 and "not allowed" in b, f"{s} {b[:80]}")
     s, b, _ = raw("/v1/chat/completions", {"model": MODEL, "messages": [{"role": "user", "content": [
                   {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}}]}]})
     check("a picture is refused", s == 400 and "not allowed" in b, f"{s} {b[:80]}")

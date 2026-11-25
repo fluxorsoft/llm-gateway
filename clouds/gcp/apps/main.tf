@@ -32,7 +32,7 @@ variable "members" {
   description = "Who may open the apps"
 }
 variable "apps" {
-  type = map(object({ project = string, region = string, app = string, secret = string, network = string, subnet = string, model = string, other_model = string }))
+  type = map(object({ project = string, region = string, app = string, secret = string, network = string, subnet = string, model = string, other_model = string, provider_tools = optional(list(string), []) }))
 }
 
 data "google_project" "team" {
@@ -51,7 +51,7 @@ resource "google_artifact_registry_repository_iam_member" "pull" {
 }
 
 locals {
-  environment = { for t, a in var.apps : t => {
+  environment = { for t, a in var.apps : t => merge({
     APP          = t
     LLM_TEAM     = t
     LLM_URL      = var.address
@@ -60,7 +60,7 @@ locals {
     OTHER_MODEL  = a.other_model
     TEAM_PROJECT = a.project
     DEFAULT_URLS = var.default_urls
-  } }
+  }, length(a.provider_tools) == 0 ? {} : { PROVIDER_TOOLS = join(",", a.provider_tools) }) } # only for a team that has them
 }
 
 resource "google_cloud_run_v2_service" "app" {
